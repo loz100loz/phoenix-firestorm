@@ -9,8 +9,13 @@ viewer test.
 Stage 0 is implemented and has passed a live proof using an unmodified
 Firestorm 7.2.5 beta. The bridge can discover viewer APIs, list worn
 attachments, touch the exact allowlisted scripted test HUD, and return a
-HUD-visible screenshot. Stage 0 does not read or write LSL source and does not
-modify Firestorm C++.
+HUD-visible screenshot.
+
+The user approved one narrow Stage 2 extension: a custom side-by-side viewer
+plus a single atomic write/compile/read-back/restore proof for the sole script
+in the exact worn `MCP POC ROOT` test HUD. The implementation, automated tests,
+custom viewer build, and live reversible proof have passed. The exact original
+source was restored and read back after recompilation.
 
 Later-stage features in the roadmap are ideas and design targets only. They
 must not be implemented until the user explicitly approves a new stage.
@@ -23,6 +28,7 @@ must not be implemented until the user explicitly approves a new stage.
 | [`PROOF_OF_CONCEPT.md`](PROOF_OF_CONCEPT.md) | Original architecture, proposed capabilities, staged roadmap, risks, and full long-term acceptance concept | Read for design intent; update only when the approved roadmap changes |
 | [`STAGE_0_LIVE_PROOF.md`](STAGE_0_LIVE_PROOF.md) | What was actually tested, evidence, compatibility findings, and remaining limits | Update after a meaningful repeat or expansion of the live proof |
 | [`SCRIPT_WRITE_FEASIBILITY.md`](SCRIPT_WRITE_FEASIBILITY.md) | Source-backed answer on whether MCP can write and compile an existing HUD script, what is missing, and the safest first live write test | Read before designing or implementing script access |
+| [`STAGE_2_SCRIPT_WRITE_PROOF.md`](STAGE_2_SCRIPT_WRITE_PROOF.md) | Approved safety contract, implementation status, verification order, and eventual live result for the reversible test-HUD script proof | Read before script API work or any live script write; update with every material result |
 | [`tools/firestorm_mcp_bridge/README.md`](../../tools/firestorm_mcp_bridge/README.md) | Bridge setup, launch instructions, tools, runtime files, and safety boundary | Read before setup/launch; update with operational or tool changes |
 | [`doc/building_windows.md`](../building_windows.md) | Upstream Firestorm Windows build instructions | Read only if an approved later stage requires building the viewer |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | Upstream repository contribution rules | Read before broader viewer changes or upstream contribution work |
@@ -36,6 +42,7 @@ must not be implemented until the user explicitly approves a new stage.
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/server.py` | Authenticated localhost MCP server, tools, launch config, and session descriptor |
 | `tools/firestorm_mcp_bridge/launch_installed_firestorm.ps1` | Safe installed-viewer launch, side-by-side channel selection, multi-login isolation, and Firestorm-version argument compatibility |
 | `tools/firestorm_mcp_bridge/tests/` | LEAP, service, server, MCP, and process smoke tests |
+| `indra/newview/llscriptautomationlistener.*` | Permission-preserving LEAP task-inventory, source retrieval, and source update operations for the approved proof |
 
 ## Architectural decisions
 
@@ -59,7 +66,7 @@ must not be implemented until the user explicitly approves a new stage.
 | --- | --- | --- |
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
 | Stage 1 | Not approved or implemented | Linkset/task-inventory inspection and permission metadata |
-| Stage 2 | Feasibility confirmed; not implemented | Permitted LSL source retrieval, update, compilation, and runtime control |
+| Stage 2 | Narrow test-HUD proof implemented and live-passed | Exact test-HUD task inventory, permitted source retrieval, and atomic reversible source update; no general editor |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |
 

@@ -1,9 +1,11 @@
-# Firestorm MCP Stage 0 bridge
+# Firestorm MCP proof-of-concept bridge
 
 Start with the [Firestorm MCP documentation index](../../doc/firestorm_mcp/README.md)
 for the roadmap, current proof status, safety boundaries, and code map.
 
-This directory contains the deliberately narrow proof of concept agreed for Stage 0. It does not patch Firestorm or expose script editing.
+This directory contains the live-tested Stage 0 bridge plus the implemented
+and live-tested, deliberately narrow Stage 2 reversible test-HUD script proof.
+It does not expose a general script editor or arbitrary object mutation.
 
 The bridge is launched by Firestorm through `--leap`. Its standard input and output are reserved for Firestorm's length-prefixed LLSD protocol. At the same time, it exposes authenticated MCP Streamable HTTP on `127.0.0.1`.
 
@@ -14,10 +16,19 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `list_attachments`
 - `touch_test_hud`
 - `capture_viewer`
+- `list_test_hud_scripts`
+- `prove_test_hud_script_round_trip`
 
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
 `capture_viewer` hides the viewer UI and shows HUDs by default. Screenshots stay in the current user's local application-data directory and are returned as MCP image content.
+
+`list_test_hud_scripts` resolves the same exact allowlisted worn HUD and lists
+only its LSL scripts. `prove_test_hud_script_round_trip` accepts no object ID,
+item ID, or replacement source. It requires exactly one script, saves an exact
+backup under `%LOCALAPPDATA%\FirestormMCP\script-backups`, adds and compiles a
+generated comment, verifies it by reading the source back, then restores,
+recompiles, and verifies the exact original.
 
 ## Development setup
 
@@ -81,4 +92,8 @@ Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. 
 - Request size and session counts are limited.
 - Touch is restricted to a currently worn, explicitly allowlisted attachment name.
 - Screenshots hide viewer UI by default.
-- There are no script, inventory-write, chat-send, teleport, arbitrary input, or arbitrary object tools.
+- The sole script mutation is an atomic reversible proof limited to exactly one
+  script in the exact allowlisted worn test HUD; caller-supplied source and IDs
+  are rejected by design.
+- There are no general inventory-write, chat-send, teleport, arbitrary input,
+  arbitrary object, or general script-editing tools.

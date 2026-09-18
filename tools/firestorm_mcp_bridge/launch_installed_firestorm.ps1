@@ -17,7 +17,13 @@ param(
     [string]$SessionFile,
 
     [Parameter()]
-    [string]$CaptureDirectory
+    [string]$CaptureDirectory,
+
+    [Parameter()]
+    [string]$ScriptBackupDirectory,
+
+    [Parameter()]
+    [string]$ViewerWorkingDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +32,16 @@ $bridgePython = Join-Path $bridgeRoot '.venv\Scripts\python.exe'
 
 if (-not (Test-Path -LiteralPath $ViewerPath -PathType Leaf)) {
     throw "Firestorm executable not found: $ViewerPath"
+}
+$ViewerPath = (Resolve-Path -LiteralPath $ViewerPath).Path
+if ([string]::IsNullOrWhiteSpace($ViewerWorkingDirectory)) {
+    $ViewerWorkingDirectory = Split-Path -Parent $ViewerPath
+}
+elseif (-not (Test-Path -LiteralPath $ViewerWorkingDirectory -PathType Container)) {
+    throw "Viewer working directory not found: $ViewerWorkingDirectory"
+}
+else {
+    $ViewerWorkingDirectory = (Resolve-Path -LiteralPath $ViewerWorkingDirectory).Path
 }
 if (-not (Test-Path -LiteralPath $bridgePython -PathType Leaf)) {
     throw "Bridge virtual environment not found. Follow the Development setup in README.md first."
@@ -73,6 +89,10 @@ else {
     }
 }
 
+if ([string]::IsNullOrWhiteSpace($ScriptBackupDirectory)) {
+    $ScriptBackupDirectory = Join-Path $localDataRoot 'script-backups'
+}
+
 if (Test-Path -LiteralPath $SessionFile) {
     throw "Session descriptor already exists; refusing to overwrite it: $SessionFile"
 }
@@ -92,6 +112,7 @@ $launchConfig = @{
     port = $Port
     session_file = $SessionFile
     capture_dir = $CaptureDirectory
+    script_backup_dir = $ScriptBackupDirectory
     allowed_attachment_names = @($AllowedAttachmentName)
 }
 $launchConfigJson = $launchConfig | ConvertTo-Json -Compress
@@ -117,6 +138,7 @@ else {
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $ViewerPath
+$startInfo.WorkingDirectory = $ViewerWorkingDirectory
 $startInfo.UseShellExecute = $true
 $viewerArguments = @()
 if ($Multiple) {
@@ -135,6 +157,7 @@ if ($PSCmdlet.ShouldProcess($ViewerPath, 'Launch Firestorm with the Stage 0 MCP 
 [pscustomobject]@{
     ViewerProcessId = if ($process) { $process.Id } else { $null }
     ViewerPath = $ViewerPath
+    ViewerWorkingDirectory = $ViewerWorkingDirectory
     Multiple = [bool]$Multiple
     ViewerArguments = $viewerArguments
     LeapCommand = $leapCommand
@@ -142,4 +165,5 @@ if ($PSCmdlet.ShouldProcess($ViewerPath, 'Launch Firestorm with the Stage 0 MCP 
     Port = $Port
     SessionFile = $SessionFile
     CaptureDirectory = $CaptureDirectory
+    ScriptBackupDirectory = $ScriptBackupDirectory
 }

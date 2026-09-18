@@ -20,11 +20,15 @@ class FakeLeap:
 
     def __init__(self) -> None:
         self.notifications: list[tuple[str, dict[str, Any]]] = []
+        self.script_source = "default\n{\n    touch_start(integer total) { llOwnerSay(\"ready\"); }\n}\n"
+        self.script_updates: list[str] = []
+        self.fail_next_compile = False
 
     def discover_apis(self, *, timeout: float = 15.0) -> dict[str, Any]:
         return {
             "LLAgent": {"desc": "agent"},
             "LLViewerWindow": {"desc": "window"},
+            "LLScriptAutomation": {"desc": "script automation"},
         }
 
     def request(self, pump: str, data: dict[str, Any], *, timeout: float = 15.0):
@@ -44,6 +48,33 @@ class FakeLeap:
         if pump == "LLViewerWindow" and data["op"] == "saveSnapshot":
             Path(data["filename"]).write_bytes(PNG_1X1)
             return {"ok": True}
+        if pump == "LLScriptAutomation" and data["op"] == "getTaskInventory":
+            return {
+                "items": [
+                    {
+                        "item_id": "33333333-3333-3333-3333-333333333333",
+                        "name": "MCP POC Controller",
+                        "description": "Disposable proof script",
+                        "is_script": True,
+                        "can_copy": True,
+                        "can_modify": True,
+                    }
+                ]
+            }
+        if pump == "LLScriptAutomation" and data["op"] == "getScriptSource":
+            return {"source": self.script_source}
+        if pump == "LLScriptAutomation" and data["op"] == "updateScriptSource":
+            self.script_source = data["source"]
+            self.script_updates.append(data["source"])
+            compiled = not self.fail_next_compile
+            self.fail_next_compile = False
+            return {
+                "compiled": compiled,
+                "installed": compiled,
+                "running": True,
+                "target": "mono",
+                "errors": [],
+            }
         raise AssertionError((pump, data))
 
     def notify(self, pump: str, data: dict[str, Any]) -> None:
@@ -93,3 +124,39 @@ def test_capture_creates_nonempty_png(service):
     assert snapshot.metadata["show_ui"] is False
     assert snapshot.metadata["show_hud"] is True
 
+
+def test_script_round_trip_is_exactly_restored_and_backed_up(service):
+    original = service.leap.script_source
+
+    scripts = service.list_test_hud_scripts()
+    assert scripts == [
+        {
+            "name": "MCP POC Controller",
+            "description": "Disposable proof script",
+            "can_copy": True,
+            "can_modify": True,
+        }
+    ]
+
+    result = service.prove_test_hud_script_round_trip()
+
+    assert result["proved"] is True
+    assert result["marker_verified"] is True
+    assert result["original_restored"] is True
+    assert service.leap.script_source == original
+    assert len(service.leap.script_updates) == 2
+    assert "Firestorm MCP reversible proof" in service.leap.script_updates[0]
+    assert service.leap.script_updates[1] == original
+    assert Path(result["backup_path"]).read_text(encoding="utf-8") == original
+
+
+def test_script_round_trip_restores_after_marked_compile_failure(service):
+    original = service.leap.script_source
+    service.leap.fail_next_compile = True
+
+    with pytest.raises(LeapError, match="exact original source was restored"):
+        service.prove_test_hud_script_round_trip()
+
+    assert service.leap.script_source == original
+    assert len(service.leap.script_updates) == 2
+    assert service.leap.script_updates[1] == original

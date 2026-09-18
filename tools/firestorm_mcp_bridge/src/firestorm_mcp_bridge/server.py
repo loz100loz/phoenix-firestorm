@@ -71,10 +71,11 @@ def create_mcp_server(
         )
 
     mcp = MCPServer(
-        name="Firestorm MCP Stage 0",
+        name="Firestorm MCP Proof of Concept",
         description=(
             "Narrow proof-of-concept bridge for viewer discovery, worn test-HUD touch, "
-            "and HUD-visible screenshots. It does not expose script or arbitrary object mutation."
+            "HUD-visible screenshots, and one reversible write/compile/restore proof limited "
+            "to the sole script in an exact allowlisted worn test HUD."
         ),
         version=__version__,
         **kwargs,
@@ -112,6 +113,24 @@ def create_mcp_server(
             face=face,
         )
 
+    @mcp.tool(structured_output=True)
+    def list_test_hud_scripts(
+        attachment_name: str = DEFAULT_ALLOWED_ATTACHMENT,
+    ) -> list[dict[str, Any]]:
+        """List LSL scripts inside one exact allowlisted, currently worn test HUD."""
+
+        return service.list_test_hud_scripts(attachment_name=attachment_name)
+
+    @mcp.tool(structured_output=True)
+    def prove_test_hud_script_round_trip(
+        attachment_name: str = DEFAULT_ALLOWED_ATTACHMENT,
+    ) -> dict[str, Any]:
+        """Back up, mark, compile, verify, restore, and recompile the sole test-HUD script."""
+
+        return service.prove_test_hud_script_round_trip(
+            attachment_name=attachment_name,
+        )
+
     @mcp.tool()
     def capture_viewer(
         width: int = 1600,
@@ -145,6 +164,10 @@ def default_capture_dir() -> Path:
     return default_session_file().parent / "captures"
 
 
+def default_script_backup_dir() -> Path:
+    return default_session_file().parent / "script-backups"
+
+
 def decode_launch_config(value: str) -> dict[str, Any]:
     if len(value) > 16_384:
         raise ValueError("launch config is too large")
@@ -156,7 +179,13 @@ def decode_launch_config(value: str) -> dict[str, Any]:
         raise ValueError("launch config is not valid base64url JSON") from exc
     if not isinstance(config, dict):
         raise ValueError("launch config must be a JSON object")
-    supported = {"port", "session_file", "capture_dir", "allowed_attachment_names"}
+    supported = {
+        "port",
+        "session_file",
+        "capture_dir",
+        "script_backup_dir",
+        "allowed_attachment_names",
+    }
     unknown = sorted(set(config) - supported)
     if unknown:
         raise ValueError(f"launch config contains unsupported fields: {', '.join(unknown)}")
@@ -174,6 +203,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--path", default=DEFAULT_PATH)
     parser.add_argument("--session-file", type=Path, default=default_session_file())
     parser.add_argument("--capture-dir", type=Path, default=default_capture_dir())
+    parser.add_argument(
+        "--script-backup-dir",
+        type=Path,
+        default=default_script_backup_dir(),
+    )
     parser.add_argument(
         "--allow-attachment-name",
         action="append",
@@ -197,6 +231,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 if not isinstance(config["capture_dir"], str) or not config["capture_dir"].strip():
                     raise ValueError("capture_dir must be a non-empty string")
                 args.capture_dir = Path(config["capture_dir"])
+            if "script_backup_dir" in config:
+                if (
+                    not isinstance(config["script_backup_dir"], str)
+                    or not config["script_backup_dir"].strip()
+                ):
+                    raise ValueError("script_backup_dir must be a non-empty string")
+                args.script_backup_dir = Path(config["script_backup_dir"])
             if "allowed_attachment_names" in config:
                 names = config["allowed_attachment_names"]
                 if (
@@ -312,6 +353,7 @@ def main(argv: list[str] | None = None) -> None:
         leap,
         args.capture_dir,
         tuple(args.allowed_attachment_names),
+        script_backup_dir=args.script_backup_dir,
         request_timeout=args.request_timeout,
     )
     mcp = create_mcp_server(service, token=token, resource_url=endpoint)
@@ -322,7 +364,7 @@ def main(argv: list[str] | None = None) -> None:
         token=token,
         allowed_attachment_names=args.allowed_attachment_names,
     )
-    LOGGER.info("Firestorm MCP Stage 0 listening at %s", endpoint)
+    LOGGER.info("Firestorm MCP proof of concept listening at %s", endpoint)
     LOGGER.info("Session descriptor: %s", args.session_file.resolve())
 
     try:

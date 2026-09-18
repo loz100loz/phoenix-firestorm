@@ -26,6 +26,8 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
                 "discover_viewer_apis",
                 "list_attachments",
                 "touch_test_hud",
+                "list_test_hud_scripts",
+                "prove_test_hud_script_round_trip",
                 "capture_viewer",
             }
 
@@ -41,4 +43,3 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
             assert [block.type for block in screenshot.content] == ["text", "image"]
 
     asyncio.run(exercise())
-

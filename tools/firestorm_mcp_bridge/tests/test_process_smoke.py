@@ -54,6 +54,7 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
 
     touch_seen = threading.Event()
     viewer_error: list[BaseException] = []
+    script_source = ["default\n{\n    touch_start(integer total) { llOwnerSay(\"ready\"); }\n}\n"]
 
     def mock_viewer() -> None:
         try:
@@ -75,6 +76,7 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                     response = {
                         "LLAgent": {"desc": "agent"},
                         "LLViewerWindow": {"desc": "window"},
+                        "LLScriptAutomation": {"desc": "script automation"},
                     }
                 elif pump == "LLAgent" and op == "getID":
                     response = {"id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}
@@ -95,6 +97,30 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                 elif pump == "LLViewerWindow" and op == "saveSnapshot":
                     Path(data["filename"]).write_bytes(PNG_1X1)
                     response = {"ok": True}
+                elif pump == "LLScriptAutomation" and op == "getTaskInventory":
+                    response = {
+                        "items": [
+                            {
+                                "item_id": "33333333-3333-3333-3333-333333333333",
+                                "name": "MCP POC Controller",
+                                "description": "Disposable proof script",
+                                "is_script": True,
+                                "can_copy": True,
+                                "can_modify": True,
+                            }
+                        ]
+                    }
+                elif pump == "LLScriptAutomation" and op == "getScriptSource":
+                    response = {"source": script_source[0]}
+                elif pump == "LLScriptAutomation" and op == "updateScriptSource":
+                    script_source[0] = data["source"]
+                    response = {
+                        "compiled": True,
+                        "installed": True,
+                        "running": True,
+                        "target": "mono",
+                        "errors": [],
+                    }
                 else:
                     response = {"error": f"unexpected request {pump}/{op}"}
 
@@ -141,6 +167,8 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                         "discover_viewer_apis",
                         "list_attachments",
                         "touch_test_hud",
+                        "list_test_hud_scripts",
+                        "prove_test_hud_script_round_trip",
                         "capture_viewer",
                     }
                     status = await session.call_tool("viewer_status", {})
@@ -150,6 +178,8 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                     assert attachments.structured_content["result"][0]["name"] == "MCP POC ROOT"
                     touched = await session.call_tool("touch_test_hud", {})
                     assert touched.structured_content["sent"] is True
+                    proof = await session.call_tool("prove_test_hud_script_round_trip", {})
+                    assert proof.structured_content["proved"] is True
                     screenshot = await session.call_tool(
                         "capture_viewer", {"width": 800, "height": 600}
                     )

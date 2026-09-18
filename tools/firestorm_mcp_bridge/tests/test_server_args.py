@@ -20,6 +20,7 @@ def test_launch_config_preserves_paths_and_attachment_names() -> None:
             "port": 18765,
             "session_file": r"C:\Path With Spaces\session.json",
             "capture_dir": r"C:\Path With Spaces\captures",
+            "script_backup_dir": r"C:\Path With Spaces\script-backups",
             "allowed_attachment_names": ["MCP POC ROOT", "Second test HUD"],
         }
     )
@@ -29,6 +30,7 @@ def test_launch_config_preserves_paths_and_attachment_names() -> None:
     assert args.port == 18765
     assert args.session_file == Path(r"C:\Path With Spaces\session.json")
     assert args.capture_dir == Path(r"C:\Path With Spaces\captures")
+    assert args.script_backup_dir == Path(r"C:\Path With Spaces\script-backups")
     assert args.allowed_attachment_names == ["MCP POC ROOT", "Second test HUD"]
 
 

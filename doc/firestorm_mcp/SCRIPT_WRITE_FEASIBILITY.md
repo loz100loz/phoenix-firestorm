@@ -1,8 +1,9 @@
 # HUD script-write feasibility
 
-**Finding:** Feasible, but not exposed by the current LEAP/MCP surface  
+**Finding:** Feasible; narrow implementation and live reversible proof passed
+
 **Source reviewed:** `Firestorm_Beta_7.2.5.81669` (`8741b19ca554c0c6da70b470b2480cae3ee7998d`)  
-**Live HUD mutation performed:** No
+**Live HUD mutation performed:** Yes, against the disposable exact-name test HUD only; the original was restored
 
 ## Answer
 
@@ -10,10 +11,11 @@ Firestorm can write new LSL source into an existing script inside an attached
 HUD, send it through Second Life's normal compiler, and receive compilation
 success or errors. Firestorm's standard live script editor already does this.
 
-The installed beta does not expose that workflow through LEAP. The current MCP
-therefore cannot yet enumerate the HUD's task inventory, read its script
-source, or upload replacement source. Generic UI clicking would test the wrong
-boundary and would not provide reliable permission or compiler results.
+The installed beta does not expose that workflow through LEAP. The custom
+proof viewer adds a narrow permission-preserving API that can enumerate the
+test HUD's task inventory, read its permitted script source, and upload through
+the normal compiler path. Generic UI clicking would test the wrong boundary
+and would not provide reliable permission or compiler results.
 
 ## Existing code that proves the write path
 
@@ -95,8 +97,8 @@ timeout, or compile failure. Never test against a production HUD.
 
 ## Current conclusion
 
-No live script was changed during this feasibility check. The blocker is not
-Second Life or Firestorm's ability to write the script; it is the missing
-narrow LEAP API. Implementing that API requires a custom Firestorm build and is
-a new permission-bearing stage, not a bridge-only Stage 0 change.
-
+The narrow reversible proof passed live on 2026-09-18. It compiled and read
+back a generated comment, then recompiled, restored, and read back the exact
+original source. Its implementation and verification are tracked in
+`STAGE_2_SCRIPT_WRITE_PROOF.md`; this document remains the canonical
+source-backed feasibility analysis.

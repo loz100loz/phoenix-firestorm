@@ -20,7 +20,8 @@ small repository-level documentation or ignore rules) unless the user
 explicitly approves viewer changes.
 
 Do not modify Firestorm C++ to complete Stage 0. Use the viewer's existing
-LEAP event APIs.
+LEAP event APIs. The user subsequently approved the narrow Stage 2 test-HUD
+script proof below; that does not authorize other later-stage features.
 
 ## Stage 0 contract
 
@@ -35,6 +36,24 @@ The supported MCP surface is limited to:
 Do not add script editing, inventory writes, chat sending, teleporting,
 arbitrary viewer input, or arbitrary-object operations without a new,
 explicitly approved stage.
+
+## Approved Stage 2 test-HUD script proof
+
+The only approved script mutation is an atomic reversible proof against the
+currently worn exact attachment name `MCP POC ROOT`. The MCP tool must:
+
+- accept no caller-supplied object UUID, item UUID, or replacement source;
+- require exactly one attachment-name match and exactly one LSL script;
+- enforce Firestorm's normal object/script permissions and RLVa attachment lock;
+- save and verify an exact timestamped source backup outside Git before upload;
+- append only a generated harmless comment;
+- preserve running state, Mono/LSO target, and Experience association;
+- require structured compile success and exact source read-back;
+- restore, recompile, and read back the exact original source; and
+- retain the local backup and report a recovery path if restoration fails.
+
+This proof is not authorization for arbitrary objects, production HUDs,
+caller-supplied source, script creation/deletion, or general inventory writes.
 
 ## Live-test safety
 
@@ -59,6 +78,11 @@ object UUID as a touch target.
 Firestorm's `requestTouch` notification has no acknowledgement. Report a touch
 as sent, not confirmed, and use the scripted test HUD's visible response or
 owner-side evidence when confirmation is needed.
+
+Before the live script proof, enumerate attachments and task inventory again.
+Abort before upload unless there is exactly one worn `MCP POC ROOT` and exactly
+one copyable/modifiable LSL script. Never put script source, backup contents,
+object/item UUIDs, or session tokens in Git, logs, documentation, or PR text.
 
 ## Windows launcher compatibility
 
