@@ -22,6 +22,7 @@ must not be implemented until the user explicitly approves a new stage.
 | [`AGENTS.md`](../../AGENTS.md) | Mandatory scope, safety, testing, and documentation-maintenance rules | Read first with this index; update when agent operating rules change |
 | [`PROOF_OF_CONCEPT.md`](PROOF_OF_CONCEPT.md) | Original architecture, proposed capabilities, staged roadmap, risks, and full long-term acceptance concept | Read for design intent; update only when the approved roadmap changes |
 | [`STAGE_0_LIVE_PROOF.md`](STAGE_0_LIVE_PROOF.md) | What was actually tested, evidence, compatibility findings, and remaining limits | Update after a meaningful repeat or expansion of the live proof |
+| [`SCRIPT_WRITE_FEASIBILITY.md`](SCRIPT_WRITE_FEASIBILITY.md) | Source-backed answer on whether MCP can write and compile an existing HUD script, what is missing, and the safest first live write test | Read before designing or implementing script access |
 | [`tools/firestorm_mcp_bridge/README.md`](../../tools/firestorm_mcp_bridge/README.md) | Bridge setup, launch instructions, tools, runtime files, and safety boundary | Read before setup/launch; update with operational or tool changes |
 | [`doc/building_windows.md`](../building_windows.md) | Upstream Firestorm Windows build instructions | Read only if an approved later stage requires building the viewer |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | Upstream repository contribution rules | Read before broader viewer changes or upstream contribution work |
@@ -58,7 +59,7 @@ must not be implemented until the user explicitly approves a new stage.
 | --- | --- | --- |
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
 | Stage 1 | Not approved or implemented | Linkset/task-inventory inspection and permission metadata |
-| Stage 2 | Not approved or implemented | Permitted LSL source retrieval, update, compilation, and runtime control |
+| Stage 2 | Feasibility confirmed; not implemented | Permitted LSL source retrieval, update, compilation, and runtime control |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |
 
@@ -86,4 +87,3 @@ Keep this page useful as a true index rather than a history dump:
 5. Link to canonical material instead of duplicating instructions.
 6. Never record credentials, bearer tokens, private chat, unrelated attachment
    names, avatar UUIDs, object UUIDs, inventory UUIDs, or other session secrets.
-
