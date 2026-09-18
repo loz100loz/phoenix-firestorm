@@ -127,6 +127,11 @@ firestorm.code-workspace
 .cache/clangd/index/
 *-compiled.glsl
 
+# Local environment for the Firestorm MCP proof-of-concept bridge
+tools/firestorm_mcp_bridge/.venv/
+tools/firestorm_mcp_bridge/.pytest_cache/
+tools/firestorm_mcp_bridge/src/*.egg-info/
+
 .github/release.yaml
 
 checks.json
