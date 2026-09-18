@@ -19,6 +19,8 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `list_test_hud_scripts`
 - `prove_test_hud_script_round_trip`
 - `add_third_touch_color`
+- `preview_test_hud_script_edit`
+- `apply_test_hud_script_edit`
 
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
@@ -36,6 +38,15 @@ accepts no source, IDs, or color input. It only transforms the known red/green
 touch toggle in the exact allowlisted test HUD into a red/green/blue cycle,
 after saving an exact outside-Git backup. It requires compile success and exact
 read-back, and restores the original automatically if either step fails.
+
+`preview_test_hud_script_edit` and `apply_test_hud_script_edit` form a bounded
+two-step editor for the same exact test HUD. Preview accepts only exact replace
+or append fragments and writes the complete review diff to local application
+data without uploading or returning full source. Apply requires its one-use
+plan ID and exact confirmation phrase, rejects stale source, backs up, compiles,
+read-verifies, and restores on failure. Plans expire after 30 minutes. If an
+append needs a newline separator, preview returns `separator_added: true` so an
+inverse transaction can remove the complete inserted fragment exactly.
 
 ## Development setup
 

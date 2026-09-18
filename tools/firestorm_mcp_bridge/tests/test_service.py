@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from firestorm_mcp_bridge.leap import LeapError
-from firestorm_mcp_bridge.service import Stage0Service
+from firestorm_mcp_bridge.service import EDIT_CONFIRMATION, Stage0Service
 
 PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -206,6 +206,87 @@ def test_add_third_touch_color_restores_after_compile_failure(service):
 
     with pytest.raises(LeapError, match="exact original source was restored"):
         service.add_third_touch_color()
+
+    assert service.leap.script_source == original
+    assert len(service.leap.script_updates) == 2
+    assert service.leap.script_updates[1] == original
+
+
+def test_preview_and_apply_script_edit(service):
+    original = service.leap.script_source
+    preview = service.preview_test_hud_script_edit(
+        operation="append",
+        find_text="",
+        replacement_text="// synthetic edit-plan test\n",
+    )
+
+    assert preview["planned"] is True
+    assert preview["source_returned"] is False
+    assert preview["separator_added"] is False
+    assert Path(preview["diff_path"]).is_file()
+    plan_path = Path(preview["diff_path"]).with_suffix(".json")
+    assert plan_path.is_file()
+
+    result = service.apply_test_hud_script_edit(
+        plan_id=preview["plan_id"],
+        confirmation=EDIT_CONFIRMATION,
+    )
+
+    assert result["applied"] is True
+    assert result["compiled"] is True
+    assert result["source_verified"] is True
+    assert result["plan_consumed"] is True
+    assert service.leap.script_source.endswith("// synthetic edit-plan test\n")
+    assert Path(result["backup_path"]).read_text(encoding="utf-8") == original
+    assert not plan_path.exists()
+    assert not Path(preview["diff_path"]).exists()
+
+
+def test_apply_script_edit_rejects_stale_plan(service):
+    preview = service.preview_test_hud_script_edit(
+        operation="append",
+        find_text="",
+        replacement_text="// stale plan test\n",
+    )
+    service.leap.script_source += "// changed elsewhere\n"
+
+    with pytest.raises(LeapError, match="stale plan was not applied"):
+        service.apply_test_hud_script_edit(
+            plan_id=preview["plan_id"],
+            confirmation=EDIT_CONFIRMATION,
+        )
+
+    assert service.leap.script_updates == []
+    assert not Path(preview["diff_path"]).exists()
+    assert not Path(preview["diff_path"]).with_suffix(".json").exists()
+
+
+def test_append_reports_separator_for_source_without_final_newline(service):
+    service.leap.script_source = "default { state_entry() {} }"
+    preview = service.preview_test_hud_script_edit(
+        operation="append",
+        find_text="",
+        replacement_text="// appended\n",
+    )
+
+    assert preview["separator_added"] is True
+    assert preview["candidate_bytes"] == preview["original_bytes"] + len("\n// appended\n")
+
+
+def test_apply_script_edit_restores_after_compile_failure(service):
+    original = service.leap.script_source
+    preview = service.preview_test_hud_script_edit(
+        operation="replace",
+        find_text="ready",
+        replacement_text="updated",
+    )
+    service.leap.fail_next_compile = True
+
+    with pytest.raises(LeapError, match="exact original source was restored"):
+        service.apply_test_hud_script_edit(
+            plan_id=preview["plan_id"],
+            confirmation=EDIT_CONFIRMATION,
+        )
 
     assert service.leap.script_source == original
     assert len(service.leap.script_updates) == 2

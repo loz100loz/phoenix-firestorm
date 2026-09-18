@@ -29,6 +29,8 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
                 "list_test_hud_scripts",
                 "prove_test_hud_script_round_trip",
                 "add_third_touch_color",
+                "preview_test_hud_script_edit",
+                "apply_test_hud_script_edit",
                 "capture_viewer",
             }
 

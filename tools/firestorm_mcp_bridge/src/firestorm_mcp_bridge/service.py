@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
 from .leap import LeapConnection, LeapError
 
 NULL_UUID = "00000000-0000-0000-0000-000000000000"
+MAX_SCRIPT_SOURCE_BYTES = 64 * 1024
+MAX_PATCH_FRAGMENT_BYTES = 16 * 1024
+EDIT_PLAN_TTL = timedelta(minutes=30)
+EDIT_CONFIRMATION = "APPLY MCP POC ROOT"
 
 
 @dataclass(frozen=True)
@@ -44,6 +50,7 @@ class Stage0Service:
             if script_backup_dir is not None
             else (self.capture_dir.parent / "script-backups").resolve()
         )
+        self.script_edit_plan_dir = (self.script_backup_dir.parent / "script-edit-plans").resolve()
         self.allowed_attachment_names = tuple(dict.fromkeys(allowed_attachment_names))
         self.request_timeout = request_timeout
         self.touch_cooldown = touch_cooldown
@@ -300,6 +307,208 @@ class Stage0Service:
                 "runtime_state_preserved": True,
             }
 
+    def preview_test_hud_script_edit(
+        self,
+        operation: str,
+        find_text: str,
+        replacement_text: str,
+        expected_occurrences: int = 1,
+    ) -> dict[str, Any]:
+        """Create a short-lived, outside-Git edit plan without uploading."""
+
+        if operation not in {"replace", "append"}:
+            raise LeapError("operation must be 'replace' or 'append'")
+        if "\0" in find_text or "\0" in replacement_text:
+            raise LeapError("Patch fragments cannot contain a NUL byte")
+        if len(find_text.encode("utf-8")) > MAX_PATCH_FRAGMENT_BYTES:
+            raise LeapError("find_text exceeds the 16 KiB safety limit")
+        if len(replacement_text.encode("utf-8")) > MAX_PATCH_FRAGMENT_BYTES:
+            raise LeapError("replacement_text exceeds the 16 KiB safety limit")
+        if expected_occurrences < 1 or expected_occurrences > 100:
+            raise LeapError("expected_occurrences must be between 1 and 100")
+
+        with self._script_proof_lock:
+            self._cleanup_expired_script_edit_plans()
+            target, scripts = self._get_test_hud_scripts("MCP POC ROOT")
+            if len(scripts) != 1:
+                raise LeapError(
+                    "Script editing requires exactly one LSL script in MCP POC ROOT"
+                )
+            script = scripts[0]
+            if not script.get("can_copy") or not script.get("can_modify"):
+                raise LeapError("The sole test-HUD script is not both copyable and modifiable")
+
+            object_id = str(target["object_id"])
+            item_id = self._validated_uuid(script.get("item_id"), "script item")
+            script_name = str(script.get("name", ""))
+            original = self._get_script_source(object_id, item_id)
+
+            if operation == "replace":
+                if not find_text:
+                    raise LeapError("find_text cannot be empty for a replace operation")
+                occurrences = original.count(find_text)
+                if occurrences != expected_occurrences:
+                    raise LeapError(
+                        "The exact find_text occurrence count did not match; no edit plan was created"
+                    )
+                candidate = original.replace(find_text, replacement_text)
+                separator_added = False
+            else:
+                if find_text:
+                    raise LeapError("find_text must be empty for an append operation")
+                occurrences = 0
+                if original and not original.endswith(("\n", "\r")):
+                    original_suffix = "\n"
+                else:
+                    original_suffix = ""
+                separator_added = bool(original_suffix)
+                candidate = original + original_suffix + replacement_text
+
+            if candidate == original:
+                raise LeapError("The proposed edit does not change the script")
+            if len(candidate.encode("utf-8")) > MAX_SCRIPT_SOURCE_BYTES:
+                raise LeapError("The proposed script exceeds the 64 KiB safety limit")
+
+            created = datetime.now(UTC)
+            expires = created + EDIT_PLAN_TTL
+            plan_id = uuid.uuid4().hex
+            plan = {
+                "version": 1,
+                "plan_id": plan_id,
+                "created_at": created.isoformat(),
+                "expires_at": expires.isoformat(),
+                "attachment_name": "MCP POC ROOT",
+                "script_name": script_name,
+                "operation": operation,
+                "occurrences": occurrences,
+                "original": original,
+                "candidate": candidate,
+                "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
+                "candidate_sha256": hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+            }
+            _, diff_path = self._write_script_edit_plan(plan)
+            return {
+                "planned": True,
+                "plan_id": plan_id,
+                "attachment_name": "MCP POC ROOT",
+                "script_name": script_name,
+                "operation": operation,
+                "occurrences": occurrences,
+                "separator_added": separator_added,
+                "original_bytes": len(original.encode("utf-8")),
+                "candidate_bytes": len(candidate.encode("utf-8")),
+                "original_sha256": plan["original_sha256"],
+                "candidate_sha256": plan["candidate_sha256"],
+                "diff_path": str(diff_path),
+                "expires_at": expires.isoformat(),
+                "confirmation_required": EDIT_CONFIRMATION,
+                "source_returned": False,
+            }
+
+    def apply_test_hud_script_edit(
+        self,
+        plan_id: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        """Apply one exact previewed plan, verify it, and restore on failure."""
+
+        if confirmation != EDIT_CONFIRMATION:
+            raise LeapError(f"confirmation must exactly equal {EDIT_CONFIRMATION!r}")
+        if not re.fullmatch(r"[0-9a-f]{32}", plan_id):
+            raise LeapError("plan_id is invalid")
+
+        with self._script_proof_lock:
+            plan_path = self.script_edit_plan_dir / f"{plan_id}.json"
+            if not plan_path.is_file():
+                raise LeapError("The edit plan does not exist or has already been consumed")
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise LeapError("The edit plan could not be read safely") from exc
+            if not isinstance(plan, dict) or plan.get("plan_id") != plan_id:
+                raise LeapError("The edit plan is invalid")
+            try:
+                expires = datetime.fromisoformat(str(plan["expires_at"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise LeapError("The edit plan expiry is invalid") from exc
+            if datetime.now(UTC) >= expires:
+                self._remove_script_edit_plan(plan_id)
+                raise LeapError("The edit plan has expired; create a fresh preview")
+
+            original = plan.get("original")
+            candidate = plan.get("candidate")
+            if not isinstance(original, str) or not isinstance(candidate, str):
+                raise LeapError("The edit plan source payload is invalid")
+            if hashlib.sha256(original.encode("utf-8")).hexdigest() != plan.get(
+                "original_sha256"
+            ) or hashlib.sha256(candidate.encode("utf-8")).hexdigest() != plan.get(
+                "candidate_sha256"
+            ):
+                raise LeapError("The edit plan failed its integrity check")
+
+            target, scripts = self._get_test_hud_scripts("MCP POC ROOT")
+            if len(scripts) != 1:
+                raise LeapError(
+                    "Script editing requires exactly one LSL script in MCP POC ROOT"
+                )
+            script = scripts[0]
+            if not script.get("can_copy") or not script.get("can_modify"):
+                raise LeapError("The sole test-HUD script is not both copyable and modifiable")
+            object_id = str(target["object_id"])
+            item_id = self._validated_uuid(script.get("item_id"), "script item")
+            current = self._get_script_source(object_id, item_id)
+            if current != original:
+                self._remove_script_edit_plan(plan_id)
+                raise LeapError(
+                    "The live script changed after preview; the stale plan was not applied"
+                )
+
+            backup_path = self._write_script_backup(original)
+            primary_error: Exception | None = None
+            update_result: dict[str, Any] | None = None
+            try:
+                update_result = self._update_script_source(object_id, item_id, candidate)
+                if not update_result.get("compiled"):
+                    raise LeapError("Firestorm reported that the edited script did not compile")
+                self._wait_for_script_source(object_id, item_id, candidate)
+            except Exception as exc:
+                primary_error = exc
+
+            if primary_error is not None:
+                try:
+                    restore_result = self._update_script_source(object_id, item_id, original)
+                    if not restore_result.get("compiled"):
+                        raise LeapError("Firestorm reported that the original script did not recompile")
+                    self._wait_for_script_source(object_id, item_id, original)
+                except Exception as restore_error:
+                    raise LeapError(
+                        "The planned edit failed and the original could not be fully restored. "
+                        f"The exact local backup is at {backup_path}. "
+                        f"Restore error: {restore_error}. Edit error: {primary_error}"
+                    ) from restore_error
+                self._remove_script_edit_plan(plan_id)
+                raise LeapError(
+                    "The planned edit failed, but the exact original source was restored and recompiled. "
+                    f"Backup: {backup_path}. Error: {primary_error}"
+                ) from primary_error
+
+            self._remove_script_edit_plan(plan_id)
+            return {
+                "applied": True,
+                "plan_id": plan_id,
+                "attachment_name": "MCP POC ROOT",
+                "script_name": str(script.get("name", "")),
+                "backup_path": str(backup_path),
+                "original_bytes": len(original.encode("utf-8")),
+                "updated_bytes": len(candidate.encode("utf-8")),
+                "original_sha256": plan["original_sha256"],
+                "updated_sha256": plan["candidate_sha256"],
+                "compiled": bool(update_result and update_result.get("compiled")),
+                "source_verified": True,
+                "runtime_state_preserved": True,
+                "plan_consumed": True,
+            }
+
     def capture_viewer(
         self,
         *,
@@ -529,3 +738,58 @@ class Stage0Service:
             if stream.read() != source:
                 raise LeapError("The local script backup did not verify byte-for-byte")
         return path
+
+    def _write_script_edit_plan(self, plan: dict[str, Any]) -> tuple[Path, Path]:
+        for parent in (self.script_edit_plan_dir, *self.script_edit_plan_dir.parents):
+            if (parent / ".git").exists():
+                raise LeapError("Script edit plans must be stored outside a Git working tree")
+        self.script_edit_plan_dir.mkdir(parents=True, exist_ok=True)
+        plan_id = str(plan["plan_id"])
+        plan_path = self.script_edit_plan_dir / f"{plan_id}.json"
+        diff_path = self.script_edit_plan_dir / f"{plan_id}.diff"
+        serialized = json.dumps(plan, ensure_ascii=False, sort_keys=True)
+        with plan_path.open("x", encoding="utf-8", newline="") as stream:
+            stream.write(serialized)
+            stream.flush()
+        if plan_path.read_text(encoding="utf-8") != serialized:
+            plan_path.unlink(missing_ok=True)
+            raise LeapError("The local script edit plan did not verify byte-for-byte")
+
+        diff = "".join(
+            unified_diff(
+                str(plan["original"]).splitlines(keepends=True),
+                str(plan["candidate"]).splitlines(keepends=True),
+                fromfile="current.lsl",
+                tofile="proposed.lsl",
+            )
+        )
+        try:
+            with diff_path.open("x", encoding="utf-8", newline="") as stream:
+                stream.write(diff)
+                stream.flush()
+            if diff_path.read_text(encoding="utf-8") != diff:
+                raise LeapError("The local script diff did not verify byte-for-byte")
+        except Exception:
+            plan_path.unlink(missing_ok=True)
+            diff_path.unlink(missing_ok=True)
+            raise
+        return plan_path, diff_path
+
+    def _remove_script_edit_plan(self, plan_id: str) -> None:
+        (self.script_edit_plan_dir / f"{plan_id}.json").unlink(missing_ok=True)
+        (self.script_edit_plan_dir / f"{plan_id}.diff").unlink(missing_ok=True)
+
+    def _cleanup_expired_script_edit_plans(self) -> None:
+        if not self.script_edit_plan_dir.is_dir():
+            return
+        now = datetime.now(UTC)
+        for plan_path in self.script_edit_plan_dir.glob("*.json"):
+            if not re.fullmatch(r"[0-9a-f]{32}\.json", plan_path.name):
+                continue
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                expires = datetime.fromisoformat(str(plan["expires_at"]))
+            except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if now >= expires:
+                self._remove_script_edit_plan(plan_path.stem)

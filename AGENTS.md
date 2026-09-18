@@ -63,6 +63,25 @@ the exact original outside Git; compile and read-verify the exact candidate;
 and restore/recompile/read-verify the original automatically if the edit fails.
 This does not authorize any other persistent script edit.
 
+The user then approved a reusable two-step editor for the sole script in the
+exact worn `MCP POC ROOT`. It may accept bounded exact-replace or append
+fragments, but never object/item IDs or a full-source read response. Preview
+must create a 30-minute plan and reviewable diff outside Git without uploading.
+Apply must require the exact confirmation phrase, re-resolve the HUD/script,
+reject a stale source, create an exact backup, compile, read-verify, and restore
+on failure. Consumed, stale, safely restored, and expired plans must be removed.
+If append needs to add a separating newline, preview must report that fact so a
+later inverse edit can remove the complete inserted fragment when required.
+This approval remains limited to the disposable test HUD; it does not authorize
+arbitrary HUDs, rezzed objects, bulk writes, or source deletion.
+
+The intended next product workflow is project-folder synchronization: local
+`.lsl` files organized by game device in VS Code should be the source of truth,
+with explicit manifest mappings to Firestorm task scripts. Implement this in
+stages, beginning with the exact test HUD. Do not infer authorization to write
+other devices until owned/selected-object resolution and its safety policy are
+explicitly approved and live-proven.
+
 ## Live-test safety
 
 - Never request, read, store, or enter the user's Firestorm credentials.
@@ -93,8 +112,11 @@ verification; a delayed rendered frame is not evidence of script or bridge lag.
 
 Before the live script proof, enumerate attachments and task inventory again.
 Abort before upload unless there is exactly one worn `MCP POC ROOT` and exactly
-one copyable/modifiable LSL script. Never put script source, backup contents,
-object/item UUIDs, or session tokens in Git, logs, documentation, or PR text.
+one copyable/modifiable LSL script. Never put live-retrieved source, backup
+contents, object/item UUIDs, or session tokens in the Firestorm MCP repository,
+logs, documentation, or PR text. A user-declared script workspace may
+intentionally contain and version its own `.lsl` source; do not confuse that
+with runtime backups or source returned from Firestorm.
 
 ## Windows launcher compatibility
 

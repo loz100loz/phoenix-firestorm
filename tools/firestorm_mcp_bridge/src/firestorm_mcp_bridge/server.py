@@ -74,7 +74,7 @@ def create_mcp_server(
         name="Firestorm MCP Proof of Concept",
         description=(
             "Narrow proof-of-concept bridge for viewer discovery, worn test-HUD touch, "
-            "HUD-visible screenshots, and one reversible write/compile/restore proof limited "
+            "HUD-visible screenshots, and guarded write/compile/verify transactions limited "
             "to the sole script in an exact allowlisted worn test HUD."
         ),
         version=__version__,
@@ -138,6 +138,34 @@ def create_mcp_server(
         """Persistently extend the exact test-HUD red/green touch cycle with blue."""
 
         return service.add_third_touch_color(attachment_name=attachment_name)
+
+    @mcp.tool(structured_output=True)
+    def preview_test_hud_script_edit(
+        operation: str,
+        find_text: str,
+        replacement_text: str,
+        expected_occurrences: int = 1,
+    ) -> dict[str, Any]:
+        """Preview an exact replace or append edit for MCP POC ROOT without uploading."""
+
+        return service.preview_test_hud_script_edit(
+            operation=operation,
+            find_text=find_text,
+            replacement_text=replacement_text,
+            expected_occurrences=expected_occurrences,
+        )
+
+    @mcp.tool(structured_output=True)
+    def apply_test_hud_script_edit(
+        plan_id: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        """Apply one previewed MCP POC ROOT edit with backup, compile, and rollback."""
+
+        return service.apply_test_hud_script_edit(
+            plan_id=plan_id,
+            confirmation=confirmation,
+        )
 
     @mcp.tool()
     def capture_viewer(

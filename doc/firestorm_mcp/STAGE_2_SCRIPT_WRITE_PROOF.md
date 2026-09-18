@@ -99,6 +99,31 @@ states.
 
 The edit is persistent. The recovery backup remains outside Git.
 
+## Reusable test-HUD edit transaction
+
+The user approved removing the one-tool-per-edit bottleneck for the same sole
+script in exact worn `MCP POC ROOT`. The implementation exposes two operations:
+
+- `preview_test_hud_script_edit` accepts a bounded exact replacement or append
+  fragment, reads the source privately, and writes a 30-minute plan plus unified
+  diff outside Git without uploading or returning the complete source.
+- `apply_test_hud_script_edit` accepts only that opaque plan ID and the exact
+  confirmation phrase. It re-resolves the attachment and script, refuses stale
+  source, backs up, compiles, exact-read-verifies, and restores on failure.
+
+Plans are one-use. Applied, stale, expired, or safely restored plans and diffs
+are deleted; the recovery backup remains. Automated tests cover successful
+apply, stale-plan refusal, and restoration after a simulated compile failure.
+
+The live transaction proof passed on 2026-09-19. A generated comment was
+previewed without returning source, applied, compiled, and exactly read back.
+A second preview/apply removed it and also compiled and read back. Exact hash
+comparison then detected one remaining newline: append had inserted a required
+separator because the starting source had no final newline. A final guarded
+transaction restored the exact 388-byte starting source, recompiled it, and
+verified its hash. Preview now explicitly reports `separator_added`, and a
+regression test covers this case.
+
 ## Expansion boundary
 
 The architecture can later support other visible objects and HUDs that the

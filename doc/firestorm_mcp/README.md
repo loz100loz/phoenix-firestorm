@@ -18,6 +18,11 @@ custom viewer build, and live reversible proof have passed. The exact original
 source was restored and read back after recompilation. A subsequent one-purpose
 persistent operation extended the known red/green touch toggle with blue. Its
 live compile, exact source read-back, and three-color visual touch proof passed.
+The next approved implementation step is a reusable two-step editor for that
+same test HUD. Its transaction core and automated tests are implemented; live
+preview/apply/compile/read-back and exact restoration have passed. The
+longer-term target is manifest-driven sync from the user's VS Code game-project
+folders.
 
 Later-stage features in the roadmap are ideas and design targets only. They
 must not be implemented until the user explicitly approves a new stage.
@@ -31,6 +36,7 @@ must not be implemented until the user explicitly approves a new stage.
 | [`STAGE_0_LIVE_PROOF.md`](STAGE_0_LIVE_PROOF.md) | What was actually tested, evidence, compatibility findings, and remaining limits | Update after a meaningful repeat or expansion of the live proof |
 | [`SCRIPT_WRITE_FEASIBILITY.md`](SCRIPT_WRITE_FEASIBILITY.md) | Source-backed answer on whether MCP can write and compile an existing HUD script, what is missing, and the safest first live write test | Read before designing or implementing script access |
 | [`STAGE_2_SCRIPT_WRITE_PROOF.md`](STAGE_2_SCRIPT_WRITE_PROOF.md) | Approved safety contract, implementation status, verification order, and eventual live result for the reversible test-HUD script proof | Read before script API work or any live script write; update with every material result |
+| [`WORKSPACE_SYNC.md`](WORKSPACE_SYNC.md) | Target VS Code-to-Firestorm device/script workflow, manifest shape, transaction model, and staged expansion boundary | Read before adding local-file sync or world-object targeting |
 | [`tools/firestorm_mcp_bridge/README.md`](../../tools/firestorm_mcp_bridge/README.md) | Bridge setup, launch instructions, tools, runtime files, and safety boundary | Read before setup/launch; update with operational or tool changes |
 | [`doc/building_windows.md`](../building_windows.md) | Upstream Firestorm Windows build instructions | Read only if an approved later stage requires building the viewer |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | Upstream repository contribution rules | Read before broader viewer changes or upstream contribution work |
@@ -40,7 +46,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Path | Responsibility |
 | --- | --- |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/leap.py` | Length-prefixed LLSD LEAP transport, request correlation, and API discovery |
-| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 safety policy plus guarded reversible and three-color test-HUD operations |
+| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy plus guarded proof, three-color, and two-step test-HUD edit transactions |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/server.py` | Authenticated localhost MCP server, tools, launch config, and session descriptor |
 | `tools/firestorm_mcp_bridge/launch_installed_firestorm.ps1` | Safe installed-viewer launch, side-by-side channel selection, multi-login isolation, and Firestorm-version argument compatibility |
 | `tools/firestorm_mcp_bridge/tests/` | LEAP, service, server, MCP, and process smoke tests |
@@ -70,7 +76,7 @@ must not be implemented until the user explicitly approves a new stage.
 | --- | --- | --- |
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
 | Stage 1 | Not approved or implemented | Linkset/task-inventory inspection and permission metadata |
-| Stage 2 | Reversible proof and exact persistent three-color edit live-passed | Exact test-HUD task inventory, permitted source retrieval, atomic reversible proof, and one fixed red/green-to-blue persistent edit; no general editor |
+| Stage 2 | Proof, three-color edit, and reusable test-HUD editor live-passed | Exact test-HUD task inventory, permitted retrieval, reversible proof, fixed color edit, and bounded preview/apply transactions; no other objects |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |
 

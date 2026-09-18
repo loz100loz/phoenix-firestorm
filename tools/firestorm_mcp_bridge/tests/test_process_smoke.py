@@ -170,6 +170,8 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                         "list_test_hud_scripts",
                         "prove_test_hud_script_round_trip",
                         "add_third_touch_color",
+                        "preview_test_hud_script_edit",
+                        "apply_test_hud_script_edit",
                         "capture_viewer",
                     }
                     status = await session.call_tool("viewer_status", {})
