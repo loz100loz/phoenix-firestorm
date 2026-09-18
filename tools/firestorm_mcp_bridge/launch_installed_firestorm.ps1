@@ -1,10 +1,23 @@
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter()]
     [string]$ViewerPath = 'C:\Program Files\Firestorm-Releasex64\Firestorm-Releasex64.exe',
 
     [Parameter()]
-    [string[]]$AllowedAttachmentName = @('MCP POC ROOT')
+    [string[]]$AllowedAttachmentName = @('MCP POC ROOT'),
+
+    [Parameter()]
+    [switch]$Multiple,
+
+    [Parameter()]
+    [ValidateRange(1024, 65535)]
+    [int]$Port = 8765,
+
+    [Parameter()]
+    [string]$SessionFile,
+
+    [Parameter()]
+    [string]$CaptureDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,31 +32,102 @@ if (-not (Test-Path -LiteralPath $bridgePython -PathType Leaf)) {
 }
 
 $runningViewer = Get-Process -Name 'Firestorm-Releasex64' -ErrorAction SilentlyContinue
-if ($runningViewer) {
+if ($runningViewer -and -not $Multiple) {
     throw 'Firestorm is already running. Close it normally first so no viewer state is lost.'
 }
 
-$bridgeArguments = @('"' + $bridgePython + '"', '-m', 'firestorm_mcp_bridge')
+function Get-AvailableLoopbackPort {
+    $listener = [System.Net.Sockets.TcpListener]::new(
+        [System.Net.IPAddress]::Loopback,
+        0
+    )
+    try {
+        $listener.Start()
+        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+    }
+    finally {
+        $listener.Stop()
+    }
+}
+
+function ConvertTo-LeapCommandArgument {
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value.Contains('"')) {
+        throw 'LEAP command arguments cannot contain a double quote.'
+    }
+    return '"' + $Value + '"'
+}
+
+$localDataRoot = Join-Path $env:LOCALAPPDATA 'FirestormMCP'
+if ($Multiple) {
+    $sessionId = '{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    if (-not $PSBoundParameters.ContainsKey('Port')) {
+        $Port = Get-AvailableLoopbackPort
+    }
+    if ([string]::IsNullOrWhiteSpace($SessionFile)) {
+        $SessionFile = Join-Path $localDataRoot "sessions\session-$sessionId.json"
+    }
+    if ([string]::IsNullOrWhiteSpace($CaptureDirectory)) {
+        $CaptureDirectory = Join-Path $localDataRoot "captures\$sessionId"
+    }
+}
+else {
+    if ([string]::IsNullOrWhiteSpace($SessionFile)) {
+        $SessionFile = Join-Path $localDataRoot 'session.json'
+    }
+    if ([string]::IsNullOrWhiteSpace($CaptureDirectory)) {
+        $CaptureDirectory = Join-Path $localDataRoot 'captures'
+    }
+}
+
+if (Test-Path -LiteralPath $SessionFile) {
+    throw "Session descriptor already exists; refusing to overwrite it: $SessionFile"
+}
+
+$bridgeArguments = @(
+    (ConvertTo-LeapCommandArgument $bridgePython),
+    '-m',
+    'firestorm_mcp_bridge',
+    '--port',
+    [string]$Port,
+    '--session-file',
+    (ConvertTo-LeapCommandArgument $SessionFile),
+    '--capture-dir',
+    (ConvertTo-LeapCommandArgument $CaptureDirectory)
+)
 foreach ($name in $AllowedAttachmentName) {
     if ([string]::IsNullOrWhiteSpace($name)) {
         throw 'Allowed attachment names cannot be empty.'
     }
-    $escapedName = $name.Replace('"', '\"')
-    $bridgeArguments += @('--allow-attachment-name', '"' + $escapedName + '"')
+    $bridgeArguments += @('--allow-attachment-name', (ConvertTo-LeapCommandArgument $name))
 }
 $leapCommand = $bridgeArguments -join ' '
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $ViewerPath
 $startInfo.UseShellExecute = $true
-$startInfo.ArgumentList.Add('--leap')
-$startInfo.ArgumentList.Add($leapCommand)
-$process = [System.Diagnostics.Process]::Start($startInfo)
-
-[pscustomobject]@{
-    ViewerProcessId = $process.Id
-    ViewerPath = $ViewerPath
-    LeapCommand = $leapCommand
-    SessionFile = Join-Path $env:LOCALAPPDATA 'FirestormMCP\session.json'
+$viewerArguments = @()
+if ($Multiple) {
+    $viewerArguments += '--multiple'
+}
+$viewerArguments += @('--leap', $leapCommand)
+foreach ($argument in $viewerArguments) {
+    $startInfo.ArgumentList.Add($argument)
 }
 
+$process = $null
+if ($PSCmdlet.ShouldProcess($ViewerPath, 'Launch Firestorm with the Stage 0 MCP bridge')) {
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+}
+
+[pscustomobject]@{
+    ViewerProcessId = if ($process) { $process.Id } else { $null }
+    ViewerPath = $ViewerPath
+    Multiple = [bool]$Multiple
+    ViewerArguments = $viewerArguments
+    LeapCommand = $leapCommand
+    Port = $Port
+    SessionFile = $SessionFile
+    CaptureDirectory = $CaptureDirectory
+}

@@ -50,11 +50,19 @@ The bridge writes the active endpoint and a random per-viewer bearer token to:
 
 The default MCP endpoint is `http://127.0.0.1:8765/mcp`. The session descriptor is removed when the bridge shuts down normally.
 
-For the standard 64-bit Firestorm installation on Windows, `launch_installed_firestorm.ps1` performs the same launch safely. It refuses to continue if Firestorm is already running, so it will not terminate a viewer or risk unsaved state:
+For the standard 64-bit Firestorm installation on Windows, `launch_installed_firestorm.ps1` performs the same launch safely. Its normal mode refuses to continue if Firestorm is already running, so it will not terminate a viewer or risk unsaved state:
 
 ```powershell
 .\launch_installed_firestorm.ps1
 ```
+
+Multi-login is an explicit option:
+
+```powershell
+.\launch_installed_firestorm.ps1 -Multiple
+```
+
+This adds Firestorm's `--multiple` flag and automatically gives the bridged viewer a free loopback MCP port, a unique session descriptor, and a separate capture directory. Use the `SessionFile` returned by the launcher to connect to that specific viewer. `-Port`, `-SessionFile`, and `-CaptureDirectory` can be supplied when fixed values are needed. `-WhatIf` prints the fully constructed launch result without starting Firestorm.
 
 ## Safety boundary
 
