@@ -64,6 +64,8 @@ Multi-login is an explicit option:
 
 This adds Firestorm's `--multiple` flag and automatically gives the bridged viewer a free loopback MCP port, a unique session descriptor, and a separate capture directory. Use the `SessionFile` returned by the launcher to connect to that specific viewer. `-Port`, `-SessionFile`, and `-CaptureDirectory` can be supplied when fixed values are needed. `-WhatIf` prints the fully constructed launch result without starting Firestorm.
 
+The Windows launcher packs bridge settings into a base64url JSON launch token and uses forward slashes for the bridge executable path. Firestorm reparses the text supplied to `--leap`, treating backslashes as escapes, so this avoids both nested-quote damage and stripped Windows path separators while preserving attachment names and configuration paths that contain spaces.
+
 ## Safety boundary
 
 - MCP listens only on `127.0.0.1`.

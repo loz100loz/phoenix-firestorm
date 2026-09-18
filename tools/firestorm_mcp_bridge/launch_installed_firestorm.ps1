@@ -50,15 +50,6 @@ function Get-AvailableLoopbackPort {
     }
 }
 
-function ConvertTo-LeapCommandArgument {
-    param([Parameter(Mandatory)][string]$Value)
-
-    if ($Value.Contains('"')) {
-        throw 'LEAP command arguments cannot contain a double quote.'
-    }
-    return '"' + $Value + '"'
-}
-
 $localDataRoot = Join-Path $env:LOCALAPPDATA 'FirestormMCP'
 if ($Multiple) {
     $sessionId = '{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -85,24 +76,28 @@ if (Test-Path -LiteralPath $SessionFile) {
     throw "Session descriptor already exists; refusing to overwrite it: $SessionFile"
 }
 
-$bridgeArguments = @(
-    (ConvertTo-LeapCommandArgument $bridgePython),
-    '-m',
-    'firestorm_mcp_bridge',
-    '--port',
-    [string]$Port,
-    '--session-file',
-    (ConvertTo-LeapCommandArgument $SessionFile),
-    '--capture-dir',
-    (ConvertTo-LeapCommandArgument $CaptureDirectory)
-)
 foreach ($name in $AllowedAttachmentName) {
     if ([string]::IsNullOrWhiteSpace($name)) {
         throw 'Allowed attachment names cannot be empty.'
     }
-    $bridgeArguments += @('--allow-attachment-name', (ConvertTo-LeapCommandArgument $name))
 }
-$leapCommand = $bridgeArguments -join ' '
+
+$leapExecutable = $bridgePython.Replace('\', '/')
+if ($leapExecutable -match '\s') {
+    throw "The bridge Python path cannot contain whitespace because Firestorm reparses --leap commands: $bridgePython"
+}
+
+$launchConfig = @{
+    port = $Port
+    session_file = $SessionFile
+    capture_dir = $CaptureDirectory
+    allowed_attachment_names = @($AllowedAttachmentName)
+}
+$launchConfigJson = $launchConfig | ConvertTo-Json -Compress
+$launchConfigToken = [Convert]::ToBase64String(
+    [System.Text.Encoding]::UTF8.GetBytes($launchConfigJson)
+).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+$leapCommand = "$leapExecutable -m firestorm_mcp_bridge --launch-config $launchConfigToken"
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $ViewerPath

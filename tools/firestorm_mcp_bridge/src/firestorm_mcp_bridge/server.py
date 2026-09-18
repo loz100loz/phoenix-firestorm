@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import binascii
 import hmac
 import json
 import logging
@@ -143,8 +145,30 @@ def default_capture_dir() -> Path:
     return default_session_file().parent / "captures"
 
 
+def decode_launch_config(value: str) -> dict[str, Any]:
+    if len(value) > 16_384:
+        raise ValueError("launch config is too large")
+    padding = "=" * (-len(value) % 4)
+    try:
+        raw = base64.b64decode(value + padding, altchars=b"-_", validate=True)
+        config = json.loads(raw.decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("launch config is not valid base64url JSON") from exc
+    if not isinstance(config, dict):
+        raise ValueError("launch config must be a JSON object")
+    supported = {"port", "session_file", "capture_dir", "allowed_attachment_names"}
+    unknown = sorted(set(config) - supported)
+    if unknown:
+        raise ValueError(f"launch config contains unsupported fields: {', '.join(unknown)}")
+    return config
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--launch-config",
+        help="Base64url JSON launch settings used by the Windows launcher to avoid nested quoting.",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST, choices=[DEFAULT_HOST])
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--path", default=DEFAULT_PATH)
@@ -160,6 +184,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--request-timeout", type=float, default=15.0)
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO")
     args = parser.parse_args(argv)
+    if args.launch_config:
+        try:
+            config = decode_launch_config(args.launch_config)
+            if "port" in config:
+                args.port = int(config["port"])
+            if "session_file" in config:
+                if not isinstance(config["session_file"], str) or not config["session_file"].strip():
+                    raise ValueError("session_file must be a non-empty string")
+                args.session_file = Path(config["session_file"])
+            if "capture_dir" in config:
+                if not isinstance(config["capture_dir"], str) or not config["capture_dir"].strip():
+                    raise ValueError("capture_dir must be a non-empty string")
+                args.capture_dir = Path(config["capture_dir"])
+            if "allowed_attachment_names" in config:
+                names = config["allowed_attachment_names"]
+                if (
+                    not isinstance(names, list)
+                    or not names
+                    or not all(isinstance(name, str) and name.strip() for name in names)
+                ):
+                    raise ValueError("allowed_attachment_names must be a non-empty list of non-empty strings")
+                args.allowed_attachment_names = names
+        except (TypeError, ValueError) as exc:
+            parser.error(f"invalid --launch-config: {exc}")
     if args.port < 1024 or args.port > 65535:
         parser.error("--port must be between 1024 and 65535")
     if not args.path.startswith("/"):
@@ -294,4 +342,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-
