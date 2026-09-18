@@ -68,6 +68,8 @@ Use `-ViewerPath` to launch another installed channel, such as a side-by-side Fi
 
 The Windows launcher packs bridge settings into a base64url JSON launch token and uses forward slashes for the bridge executable path. Firestorm reparses the text supplied to `--leap`, treating backslashes as escapes, so this avoids both nested-quote damage and stripped Windows path separators while preserving attachment names and configuration paths that contain spaces.
 
+Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. The launcher detects the selected executable's product version and supplies a delimiter-safe LLSD URI value automatically, avoiding nested quotes while preserving the command text.
+
 ## Safety boundary
 
 - MCP listens only on `127.0.0.1`.

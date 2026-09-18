@@ -100,6 +100,21 @@ $launchConfigToken = [Convert]::ToBase64String(
 ).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 $leapCommand = "$leapExecutable -m firestorm_mcp_bridge --launch-config $launchConfigToken"
 
+$viewerVersion = [version](Get-Item -LiteralPath $ViewerPath).VersionInfo.ProductVersion
+if ($viewerVersion -ge [version]'7.2.5.0') {
+    # Current viewers map --leap to an LLSD setting and therefore expect LLSD
+    # notation. LLSD's URI notation accepts an arbitrary delimiter, so this
+    # form survives both Windows argument quoting and Firestorm's quote-aware
+    # command-line tokenizer without exposing inner quote characters.
+    if ($leapCommand.Contains('|')) {
+        throw 'The LEAP command cannot contain a pipe for this Firestorm version.'
+    }
+    $leapArgument = "l|$leapCommand|"
+}
+else {
+    $leapArgument = $leapCommand
+}
+
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $ViewerPath
 $startInfo.UseShellExecute = $true
@@ -107,7 +122,7 @@ $viewerArguments = @()
 if ($Multiple) {
     $viewerArguments += '--multiple'
 }
-$viewerArguments += @('--leap', $leapCommand)
+$viewerArguments += @('--leap', $leapArgument)
 foreach ($argument in $viewerArguments) {
     $startInfo.ArgumentList.Add($argument)
 }
@@ -123,6 +138,7 @@ if ($PSCmdlet.ShouldProcess($ViewerPath, 'Launch Firestorm with the Stage 0 MCP 
     Multiple = [bool]$Multiple
     ViewerArguments = $viewerArguments
     LeapCommand = $leapCommand
+    LeapArgument = $leapArgument
     Port = $Port
     SessionFile = $SessionFile
     CaptureDirectory = $CaptureDirectory
