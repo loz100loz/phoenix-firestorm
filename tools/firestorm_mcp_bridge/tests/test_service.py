@@ -160,3 +160,53 @@ def test_script_round_trip_restores_after_marked_compile_failure(service):
     assert service.leap.script_source == original
     assert len(service.leap.script_updates) == 2
     assert service.leap.script_updates[1] == original
+
+
+TWO_COLOR_TOUCH_SCRIPT = """integer toggled;
+
+default
+{
+    touch_start(integer total_number)
+    {
+        toggled = !toggled;
+
+        if (toggled)
+            llSetColor(<1.0, 0.0, 0.0>, ALL_SIDES);
+        else
+            llSetColor(<0.0, 1.0, 0.0>, ALL_SIDES);
+
+        llOwnerSay(\"Color changed\");
+    }
+}
+"""
+
+
+def test_add_third_touch_color_compiles_and_persists(service):
+    service.leap.script_source = TWO_COLOR_TOUCH_SCRIPT
+    original = service.leap.script_source
+
+    result = service.add_third_touch_color()
+
+    assert result["updated"] is True
+    assert result["compiled"] is True
+    assert result["source_verified"] is True
+    assert result["third_color"] == {"name": "blue", "rgb": [0.0, 0.0, 1.0]}
+    assert service.leap.script_source != original
+    assert service.leap.script_source.count("llSetColor") == 3
+    assert "llSetColor(<0.0, 0.0, 1.0>, ALL_SIDES);" in service.leap.script_source
+    assert "toggled = (toggled + 1) % 3;" in service.leap.script_source
+    assert len(service.leap.script_updates) == 1
+    assert Path(result["backup_path"]).read_text(encoding="utf-8") == original
+
+
+def test_add_third_touch_color_restores_after_compile_failure(service):
+    service.leap.script_source = TWO_COLOR_TOUCH_SCRIPT
+    original = service.leap.script_source
+    service.leap.fail_next_compile = True
+
+    with pytest.raises(LeapError, match="exact original source was restored"):
+        service.add_third_touch_color()
+
+    assert service.leap.script_source == original
+    assert len(service.leap.script_updates) == 2
+    assert service.leap.script_updates[1] == original

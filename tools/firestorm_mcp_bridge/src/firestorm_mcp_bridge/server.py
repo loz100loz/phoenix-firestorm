@@ -131,6 +131,14 @@ def create_mcp_server(
             attachment_name=attachment_name,
         )
 
+    @mcp.tool(structured_output=True)
+    def add_third_touch_color(
+        attachment_name: str = DEFAULT_ALLOWED_ATTACHMENT,
+    ) -> dict[str, Any]:
+        """Persistently extend the exact test-HUD red/green touch cycle with blue."""
+
+        return service.add_third_touch_color(attachment_name=attachment_name)
+
     @mcp.tool()
     def capture_viewer(
         width: int = 1600,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 import time
 import uuid
@@ -23,7 +24,7 @@ class Snapshot:
 
 
 class Stage0Service:
-    """Stage 0 operations plus one guarded, reversible test-HUD script proof."""
+    """Stage 0 operations plus guarded test-HUD script operations."""
 
     def __init__(
         self,
@@ -234,6 +235,71 @@ class Stage0Service:
                 "runtime_state_preserved": True,
             }
 
+    def add_third_touch_color(
+        self,
+        attachment_name: str = "MCP POC ROOT",
+    ) -> dict[str, Any]:
+        """Persistently extend the exact red/green test script with blue."""
+
+        with self._script_proof_lock:
+            target, scripts = self._get_test_hud_scripts(attachment_name)
+            if len(scripts) != 1:
+                raise LeapError(
+                    "The three-color edit requires exactly one LSL script in the allowlisted test HUD"
+                )
+            script = scripts[0]
+            if not script.get("can_copy") or not script.get("can_modify"):
+                raise LeapError("The sole test-HUD script is not both copyable and modifiable")
+
+            object_id = str(target["object_id"])
+            item_id = self._validated_uuid(script.get("item_id"), "script item")
+            script_name = str(script.get("name", ""))
+            original = self._get_script_source(object_id, item_id)
+            candidate = self._build_three_color_touch_source(original)
+            backup_path = self._write_script_backup(original)
+
+            primary_error: Exception | None = None
+            update_result: dict[str, Any] | None = None
+            try:
+                update_result = self._update_script_source(object_id, item_id, candidate)
+                if not update_result.get("compiled"):
+                    raise LeapError("Firestorm reported that the three-color script did not compile")
+                self._wait_for_script_source(object_id, item_id, candidate)
+            except Exception as exc:
+                primary_error = exc
+
+            if primary_error is not None:
+                try:
+                    restore_result = self._update_script_source(object_id, item_id, original)
+                    if not restore_result.get("compiled"):
+                        raise LeapError("Firestorm reported that the original script did not recompile")
+                    self._wait_for_script_source(object_id, item_id, original)
+                except Exception as restore_error:
+                    raise LeapError(
+                        "The three-color edit failed and the original could not be fully restored. "
+                        f"The exact local backup is at {backup_path}. "
+                        f"Restore error: {restore_error}. Edit error: {primary_error}"
+                    ) from restore_error
+                raise LeapError(
+                    "The three-color edit failed, but the exact original source was restored and recompiled. "
+                    f"Backup: {backup_path}. Error: {primary_error}"
+                ) from primary_error
+
+            return {
+                "updated": True,
+                "attachment_name": attachment_name,
+                "script_name": script_name,
+                "backup_path": str(backup_path),
+                "original_bytes": len(original.encode("utf-8")),
+                "updated_bytes": len(candidate.encode("utf-8")),
+                "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
+                "updated_sha256": hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+                "third_color": {"name": "blue", "rgb": [0.0, 0.0, 1.0]},
+                "compiled": bool(update_result and update_result.get("compiled")),
+                "source_verified": True,
+                "runtime_state_preserved": True,
+            }
+
     def capture_viewer(
         self,
         *,
@@ -389,6 +455,65 @@ class Stage0Service:
             time.sleep(0.5)
         detail = f": {last_error}" if last_error else ""
         raise LeapError(f"Timed out waiting for exact script source read-back{detail}")
+
+    @staticmethod
+    def _build_three_color_touch_source(source: str) -> str:
+        """Transform only the known two-color touch toggle into red/green/blue."""
+
+        declarations = list(
+            re.finditer(
+                r"(?m)^[ \t]*integer[ \t]+(?P<name>[A-Za-z_]\w*)[ \t]*;[ \t]*$",
+                source,
+            )
+        )
+        if len(declarations) != 1:
+            raise LeapError("The test script no longer has the expected single state variable")
+        variable = declarations[0].group("name")
+        escaped = re.escape(variable)
+
+        toggle_pattern = re.compile(
+            rf"(?m)^(?P<indent>[ \t]*){escaped}[ \t]*=[ \t]*!{escaped}[ \t]*;[ \t]*$"
+        )
+        toggle_matches = list(toggle_pattern.finditer(source))
+        if len(toggle_matches) != 1:
+            raise LeapError("The test script no longer has the expected two-state touch toggle")
+
+        zero = r"0(?:\.0+)?"
+        one = r"1(?:\.0+)?"
+        red = rf"<[ \t]*{one}[ \t]*,[ \t]*{zero}[ \t]*,[ \t]*{zero}[ \t]*>"
+        green = rf"<[ \t]*{zero}[ \t]*,[ \t]*{one}[ \t]*,[ \t]*{zero}[ \t]*>"
+        color_block = re.compile(
+            rf"(?m)^(?P<indent>[ \t]*)if[ \t]*\([ \t]*{escaped}[ \t]*\)[ \t]*\r?\n"
+            rf"(?P<redline>(?P<callindent>[ \t]*)llSetColor[ \t]*\([ \t]*{red}[ \t]*,[ \t]*ALL_SIDES[ \t]*\)[ \t]*;[ \t]*)\r?\n"
+            rf"(?P=indent)else[ \t]*\r?\n"
+            rf"(?P<greenline>(?P=callindent)llSetColor[ \t]*\([ \t]*{green}[ \t]*,[ \t]*ALL_SIDES[ \t]*\)[ \t]*;[ \t]*)$"
+        )
+        color_matches = list(color_block.finditer(source))
+        if len(color_matches) != 1 or len(re.findall(r"\bllSetColor[ \t]*\(", source)) != 2:
+            raise LeapError("The test script no longer has the expected red/green touch-color block")
+
+        newline = "\r\n" if "\r\n" in color_matches[0].group(0) else "\n"
+        match = color_matches[0]
+        replacement = (
+            f"{match.group('indent')}if ({variable} == 1){newline}"
+            f"{match.group('redline')}{newline}"
+            f"{match.group('indent')}else if ({variable} == 2){newline}"
+            f"{match.group('greenline')}{newline}"
+            f"{match.group('indent')}else{newline}"
+            f"{match.group('callindent')}llSetColor(<0.0, 0.0, 1.0>, ALL_SIDES);"
+        )
+        candidate = source[: match.start()] + replacement + source[match.end() :]
+        # The color-block replacement can change offsets after the toggle, so
+        # replace the independently validated toggle by content and count.
+        candidate, count = toggle_pattern.subn(
+            rf"\g<indent>{variable} = ({variable} + 1) % 3;",
+            candidate,
+        )
+        if count != 1:
+            raise LeapError("The touch state update could not be transformed safely")
+        if len(re.findall(r"\bllSetColor[ \t]*\(", candidate)) != 3:
+            raise LeapError("The generated script did not contain exactly three color operations")
+        return candidate
 
     def _write_script_backup(self, source: str) -> Path:
         for parent in (self.script_backup_dir, *self.script_backup_dir.parents):

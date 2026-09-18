@@ -15,7 +15,9 @@ The user approved one narrow Stage 2 extension: a custom side-by-side viewer
 plus a single atomic write/compile/read-back/restore proof for the sole script
 in the exact worn `MCP POC ROOT` test HUD. The implementation, automated tests,
 custom viewer build, and live reversible proof have passed. The exact original
-source was restored and read back after recompilation.
+source was restored and read back after recompilation. A subsequent one-purpose
+persistent operation extended the known red/green touch toggle with blue. Its
+live compile, exact source read-back, and three-color visual touch proof passed.
 
 Later-stage features in the roadmap are ideas and design targets only. They
 must not be implemented until the user explicitly approves a new stage.
@@ -38,7 +40,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Path | Responsibility |
 | --- | --- |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/leap.py` | Length-prefixed LLSD LEAP transport, request correlation, and API discovery |
-| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 safety policy and viewer operations |
+| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 safety policy plus guarded reversible and three-color test-HUD operations |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/server.py` | Authenticated localhost MCP server, tools, launch config, and session descriptor |
 | `tools/firestorm_mcp_bridge/launch_installed_firestorm.ps1` | Safe installed-viewer launch, side-by-side channel selection, multi-login isolation, and Firestorm-version argument compatibility |
 | `tools/firestorm_mcp_bridge/tests/` | LEAP, service, server, MCP, and process smoke tests |
@@ -57,6 +59,8 @@ must not be implemented until the user explicitly approves a new stage.
   `%LOCALAPPDATA%\FirestormMCP` and must not be committed.
 - Multi-login viewers receive separate ports, session descriptors, and capture
   directories.
+- The user's viewer limits background rendering to 1 FPS, so live screenshot
+  checks need extra settling time while Firestorm is tabbed out.
 - Firestorm 7.2.5+ needs LLSD notation for `LeapCommand`; the Windows launcher
   supplies a delimiter-safe LLSD URI value.
 
@@ -66,7 +70,7 @@ must not be implemented until the user explicitly approves a new stage.
 | --- | --- | --- |
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
 | Stage 1 | Not approved or implemented | Linkset/task-inventory inspection and permission metadata |
-| Stage 2 | Narrow test-HUD proof implemented and live-passed | Exact test-HUD task inventory, permitted source retrieval, and atomic reversible source update; no general editor |
+| Stage 2 | Reversible proof and exact persistent three-color edit live-passed | Exact test-HUD task inventory, permitted source retrieval, atomic reversible proof, and one fixed red/green-to-blue persistent edit; no general editor |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |
 
@@ -81,7 +85,8 @@ From `tools/firestorm_mcp_bridge`:
 A live Stage 0 proof must follow the ordered safety gate in `AGENTS.md` and
 must end with visual inspection of the actual saved PNG. Do not report a touch
 as confirmed merely because `requestTouch` was sent; that viewer operation has
-no acknowledgement.
+no acknowledgement. If Firestorm is backgrounded, account for the configured
+1 FPS background cap before interpreting a delayed HUD frame.
 
 ## Documentation maintenance
 

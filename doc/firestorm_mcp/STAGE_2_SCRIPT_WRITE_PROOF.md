@@ -44,6 +44,7 @@ retains the backup.
 - `LLScriptAutomation/updateScriptSource`
 - `list_test_hud_scripts`
 - `prove_test_hud_script_round_trip`
+- `add_third_touch_color`
 
 The Python bridge tests cover the complete mark/read-back/restore/read-back
 sequence with a mock viewer, including restoration after a simulated marked
@@ -66,6 +67,37 @@ The rebuilt viewer then passed the live proof on 2026-09-18:
 
 This proves only the narrowly approved disposable test-HUD round trip. It does
 not approve or prove a general script editor or arbitrary-object mutation.
+
+## Approved persistent three-color edit
+
+The user subsequently authorized one persistent change to the same disposable
+test script: preserve its red and green touch results and add blue as the third
+touch result. `add_third_touch_color` implements that request without exposing
+a general editor. It accepts no IDs, source, or color input and proceeds only
+when the sole script still has the exact expected one-variable red/green toggle
+shape. It saves and verifies the original outside Git, compiles and exactly
+reads back the generated three-color source, and automatically restores the
+original if compilation or verification fails.
+
+Automated success and compile-failure restoration tests pass. The persistent
+live operation then passed on 2026-09-19:
+
+- fresh discovery confirmed the guarded tool plus exactly one worn test HUD
+  and one copyable/modifiable script;
+- the exact 291-byte original was backed up outside Git;
+- the fixed blue third state was added, producing a 388-byte candidate;
+- Firestorm reported compile success and exact source read-back succeeded;
+- running state, Mono/LSO target, and Experience association were preserved;
+  and
+- HUD-visible captures after live touches visually confirmed red, green, and
+  blue states.
+
+An initially delayed capture was caused by the user's configured 1 FPS limit
+while Firestorm was tabbed out. It was a background-render timing effect, not
+script execution or bridge latency; longer settling produced all three visible
+states.
+
+The edit is persistent. The recovery backup remains outside Git.
 
 ## Expansion boundary
 

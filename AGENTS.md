@@ -37,9 +37,9 @@ Do not add script editing, inventory writes, chat sending, teleporting,
 arbitrary viewer input, or arbitrary-object operations without a new,
 explicitly approved stage.
 
-## Approved Stage 2 test-HUD script proof
+## Approved Stage 2 test-HUD script operations
 
-The only approved script mutation is an atomic reversible proof against the
+The first approved script mutation is an atomic reversible proof against the
 currently worn exact attachment name `MCP POC ROOT`. The MCP tool must:
 
 - accept no caller-supplied object UUID, item UUID, or replacement source;
@@ -54,6 +54,14 @@ currently worn exact attachment name `MCP POC ROOT`. The MCP tool must:
 
 This proof is not authorization for arbitrary objects, production HUDs,
 caller-supplied source, script creation/deletion, or general inventory writes.
+
+The user subsequently approved one persistent edit to that same disposable
+test HUD: extend its exact red/green `touch_start` toggle with blue as the third
+state. The MCP tool must accept no caller-supplied object ID, item ID, source,
+or color; require the known one-variable/two-`llSetColor` source shape; back up
+the exact original outside Git; compile and read-verify the exact candidate;
+and restore/recompile/read-verify the original automatically if the edit fails.
+This does not authorize any other persistent script edit.
 
 ## Live-test safety
 
@@ -78,6 +86,10 @@ object UUID as a touch target.
 Firestorm's `requestTouch` notification has no acknowledgement. Report a touch
 as sent, not confirmed, and use the scripted test HUD's visible response or
 owner-side evidence when confirmation is needed.
+
+The user's Firestorm is configured to limit background rendering to 1 FPS.
+When the viewer is tabbed out, allow extra time before HUD-visible screenshot
+verification; a delayed rendered frame is not evidence of script or bridge lag.
 
 Before the live script proof, enumerate attachments and task inventory again.
 Abort before upload unless there is exactly one worn `MCP POC ROOT` and exactly

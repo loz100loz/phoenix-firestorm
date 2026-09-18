@@ -18,6 +18,7 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `capture_viewer`
 - `list_test_hud_scripts`
 - `prove_test_hud_script_round_trip`
+- `add_third_touch_color`
 
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
@@ -29,6 +30,12 @@ item ID, or replacement source. It requires exactly one script, saves an exact
 backup under `%LOCALAPPDATA%\FirestormMCP\script-backups`, adds and compiles a
 generated comment, verifies it by reading the source back, then restores,
 recompiles, and verifies the exact original.
+
+`add_third_touch_color` is a separate one-purpose persistent operation. It
+accepts no source, IDs, or color input. It only transforms the known red/green
+touch toggle in the exact allowlisted test HUD into a red/green/blue cycle,
+after saving an exact outside-Git backup. It requires compile success and exact
+read-back, and restores the original automatically if either step fails.
 
 ## Development setup
 
@@ -92,8 +99,11 @@ Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. 
 - Request size and session counts are limited.
 - Touch is restricted to a currently worn, explicitly allowlisted attachment name.
 - Screenshots hide viewer UI by default.
-- The sole script mutation is an atomic reversible proof limited to exactly one
+- The reversible script mutation is limited to exactly one
   script in the exact allowlisted worn test HUD; caller-supplied source and IDs
   are rejected by design.
+- One additional persistent mutation is limited to extending the exact known
+  red/green test-HUD touch toggle with fixed blue; it also rejects caller source,
+  IDs, colors, or scripts whose structure does not match the guarded template.
 - There are no general inventory-write, chat-send, teleport, arbitrary input,
   arbitrary object, or general script-editing tools.
