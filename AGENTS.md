@@ -1,5 +1,17 @@
 # Firestorm MCP project guidance
 
+## Read the project index first
+
+Before changing or testing Firestorm MCP, read
+`doc/firestorm_mcp/README.md`. Follow its links to the current status, original
+roadmap, bridge operations, and relevant code/tests. The roadmap describes
+possible later stages; it is not authorization to implement them.
+
+Keep the index accurate. When adding, removing, renaming, or materially
+changing a Firestorm MCP document, component, tool, safety boundary, workflow,
+compatibility finding, or verified stage result, update the index and the
+applicable status document in the same change.
+
 ## Project scope
 
 This fork contains a deliberately narrow Stage 0 proof of concept under

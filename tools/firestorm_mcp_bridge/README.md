@@ -1,5 +1,8 @@
 # Firestorm MCP Stage 0 bridge
 
+Start with the [Firestorm MCP documentation index](../../doc/firestorm_mcp/README.md)
+for the roadmap, current proof status, safety boundaries, and code map.
+
 This directory contains the deliberately narrow proof of concept agreed for Stage 0. It does not patch Firestorm or expose script editing.
 
 The bridge is launched by Firestorm through `--leap`. Its standard input and output are reserved for Firestorm's length-prefixed LLSD protocol. At the same time, it exposes authenticated MCP Streamable HTTP on `127.0.0.1`.
