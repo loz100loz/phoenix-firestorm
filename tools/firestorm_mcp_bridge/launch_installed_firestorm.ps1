@@ -31,9 +31,10 @@ if (-not (Test-Path -LiteralPath $bridgePython -PathType Leaf)) {
     throw "Bridge virtual environment not found. Follow the Development setup in README.md first."
 }
 
-$runningViewer = Get-Process -Name 'Firestorm-Releasex64' -ErrorAction SilentlyContinue
+$viewerProcessName = [System.IO.Path]::GetFileNameWithoutExtension($ViewerPath)
+$runningViewer = Get-Process -Name $viewerProcessName -ErrorAction SilentlyContinue
 if ($runningViewer -and -not $Multiple) {
-    throw 'Firestorm is already running. Close it normally first so no viewer state is lost.'
+    throw "$viewerProcessName is already running. Close it normally first so no viewer state is lost."
 }
 
 function Get-AvailableLoopbackPort {
