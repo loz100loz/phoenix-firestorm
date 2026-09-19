@@ -91,6 +91,18 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                             }
                         ]
                     }
+                elif pump == "LLScriptAutomation" and op == "getViewerContext":
+                    response = {
+                        "avatar_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                        "avatar_name": "ninja.nova",
+                        "grid_id": "agni",
+                        "grid_label": "Second Life",
+                        "logged_in": True,
+                        "startup_state": "STATE_STARTED",
+                        "viewer_ready": True,
+                        "region_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                        "region_name": "Synthetic Region",
+                    }
                 elif pump == "LLAgent" and op == "requestTouch":
                     assert data["obj_uuid"] == "11111111-1111-1111-1111-111111111111"
                     touch_seen.set()
@@ -183,6 +195,7 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                     status = await session.call_tool("viewer_status", {})
                     assert status.is_error is False
                     assert status.structured_content["logged_in"] is True
+                    assert status.structured_content["viewer_ready"] is True
                     attachments = await session.call_tool("list_attachments", {})
                     assert attachments.structured_content["result"][0]["name"] == "MCP POC ROOT"
                     touched = await session.call_tool("touch_test_hud", {})

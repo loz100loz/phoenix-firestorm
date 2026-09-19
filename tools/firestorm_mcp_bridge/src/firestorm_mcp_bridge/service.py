@@ -107,17 +107,29 @@ class Stage0Service:
     def viewer_status(self) -> dict[str, Any]:
         discovery = self.discover_viewer_apis()
         avatar_id = NULL_UUID
-        if discovery["required_stage0"]["LLAgent"]:
+        startup_state = "UNAVAILABLE"
+        viewer_ready = False
+        logged_in = False
+        if discovery["required_script_proof"]["LLScriptAutomation"]:
+            context = self.viewer_context()
+            avatar_id = context["avatar_id"]
+            startup_state = context["startup_state"]
+            viewer_ready = context["viewer_ready"]
+            logged_in = context["logged_in"]
+        elif discovery["required_stage0"]["LLAgent"]:
             response = self.leap.request(
                 "LLAgent",
                 {"op": "getID"},
                 timeout=self.request_timeout,
             )
             avatar_id = str(response.get("id", NULL_UUID))
+            logged_in = avatar_id != NULL_UUID
         return {
             "leap_connected": self.leap.connected,
             "avatar_id": avatar_id,
-            "logged_in": avatar_id != NULL_UUID,
+            "logged_in": logged_in,
+            "startup_state": startup_state,
+            "viewer_ready": viewer_ready,
             "leap_features": self.leap.features,
             "api_count": discovery["count"],
             "required_stage0": discovery["required_stage0"],
@@ -139,12 +151,21 @@ class Stage0Service:
         avatar_id = self._validated_uuid(response.get("avatar_id"), "avatar")
         region_id = self._validated_uuid(response.get("region_id"), "region")
         logged_in = bool(response.get("logged_in"))
-        if logged_in and (avatar_id == NULL_UUID or region_id == NULL_UUID):
-            raise LeapError("Firestorm returned an incomplete logged-in viewer context")
+        startup_state = str(response.get("startup_state", "UNKNOWN"))
+        viewer_ready = bool(response.get("viewer_ready"))
+        if viewer_ready and (
+            startup_state != "STATE_STARTED"
+            or not logged_in
+            or avatar_id == NULL_UUID
+            or region_id == NULL_UUID
+        ):
+            raise LeapError("Firestorm returned an inconsistent viewer readiness state")
         return {
             "session_fingerprint": self.session_fingerprint,
             "leap_connected": self.leap.connected,
             "logged_in": logged_in,
+            "startup_state": startup_state,
+            "viewer_ready": viewer_ready,
             "avatar_id": avatar_id,
             "avatar_name": str(response.get("avatar_name", "")),
             "grid_id": str(response.get("grid_id", "")),
@@ -836,6 +857,7 @@ class Stage0Service:
     ) -> dict[str, Any]:
         """Touch one currently worn, explicitly allowlisted attachment root."""
 
+        self._require_viewer_ready()
         if face < 0 or face > 31:
             raise LeapError("face must be between 0 and 31")
         target = self._resolve_allowed_attachment(attachment_name, inventory_item_id)
@@ -1285,6 +1307,12 @@ class Stage0Service:
         )
         raw = dict(response)
 
+        if not bool(raw.get("viewer_ready")):
+            startup_state = str(raw.get("startup_state", "UNKNOWN"))
+            raise LeapError(
+                f"Firestorm is not fully loaded in-world (startup state: {startup_state})"
+            )
+
         for field, label in (
             ("avatar_id", "avatar"),
             ("region_id", "region"),
@@ -1516,6 +1544,15 @@ class Stage0Service:
         if name not in discovery["apis"]:
             raise LeapError(f"The running Firestorm viewer does not expose {name}")
 
+    def _require_viewer_ready(self) -> dict[str, Any]:
+        context = self.viewer_context()
+        if not context["viewer_ready"]:
+            raise LeapError(
+                "Firestorm is not fully loaded in-world "
+                f"(startup state: {context['startup_state']})"
+            )
+        return context
+
     @staticmethod
     def _validated_uuid(value: Any, label: str) -> str:
         try:
@@ -1624,6 +1661,7 @@ class Stage0Service:
         item_id: str,
         source: str,
     ) -> dict[str, Any]:
+        self._require_viewer_ready()
         return self.leap.request(
             "LLScriptAutomation",
             {

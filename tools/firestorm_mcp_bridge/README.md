@@ -29,7 +29,12 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `apply_test_hud_script_edit`
 
 The three target-identity tools are read-only. `viewer_context` returns the
-non-secret identity of the bridge/avatar/grid/region session.
+non-secret identity of the bridge/avatar/grid/region session plus Firestorm's
+startup state and an authoritative `viewer_ready` value. `viewer_ready` becomes
+true only at `STATE_STARTED` with a non-null avatar and valid current region;
+the bridge does not use a login timer or assume that an early region pointer
+means the world is ready. Touch, selection/inventory inspection, and script
+writes refuse to run while it is false.
 `inspect_selected_target` accepts no object UUID and requires exactly one
 selected linkset. It returns object/link/permission metadata and a script
 summary, but only issues a ten-minute in-memory handle when the target is

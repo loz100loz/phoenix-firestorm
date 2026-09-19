@@ -51,6 +51,9 @@ class FakeLeap:
         self.selected_is_attachment = False
         self.inspect_selection_error: str | None = None
         self.task_inventory_requests = 0
+        self.startup_state = "STATE_STARTED"
+        self.viewer_ready = True
+        self.logged_in = True
 
     def discover_apis(self, *, timeout: float = 15.0) -> dict[str, Any]:
         return {
@@ -114,7 +117,9 @@ class FakeLeap:
                 "avatar_name": "ninja.nova",
                 "grid_id": "agni",
                 "grid_label": "Second Life",
-                "logged_in": True,
+                "logged_in": self.logged_in,
+                "startup_state": self.startup_state,
+                "viewer_ready": self.viewer_ready,
                 "region_id": self.region_id,
                 "region_name": "Synthetic Region",
                 "agent_position_region": [128.0, 128.0, 25.0],
@@ -128,7 +133,9 @@ class FakeLeap:
                 "avatar_name": "ninja.nova",
                 "grid_id": "agni",
                 "grid_label": "Second Life",
-                "logged_in": True,
+                "logged_in": self.logged_in,
+                "startup_state": self.startup_state,
+                "viewer_ready": self.viewer_ready,
                 "region_id": self.region_id,
                 "region_name": "Synthetic Region",
                 "selection_object_count": self.selection_object_count,
@@ -244,6 +251,8 @@ def make_workspace_service(
 def test_status_and_attachments(service):
     status = service.viewer_status()
     assert status["logged_in"] is True
+    assert status["startup_state"] == "STATE_STARTED"
+    assert status["viewer_ready"] is True
     assert status["required_stage0"] == {"LLAgent": True, "LLViewerWindow": True}
     attachments = service.list_attachments()
     assert attachments[0]["name"] == "MCP POC ROOT"
@@ -253,10 +262,43 @@ def test_viewer_context_is_bound_to_one_bridge_session(service):
     context = service.viewer_context()
 
     assert context["logged_in"] is True
+    assert context["startup_state"] == "STATE_STARTED"
+    assert context["viewer_ready"] is True
     assert context["avatar_name"] == "ninja.nova"
     assert context["region_name"] == "Synthetic Region"
     assert context["session_fingerprint"] == service.session_fingerprint
     assert "token" not in context
+
+
+def test_pre_started_viewer_reports_not_ready_and_refuses_mutation(service):
+    service.leap.startup_state = "STATE_WORLD_WAIT"
+    service.leap.viewer_ready = False
+
+    context = service.viewer_context()
+    assert context["logged_in"] is True
+    assert context["startup_state"] == "STATE_WORLD_WAIT"
+    assert context["viewer_ready"] is False
+    assert service.viewer_status()["viewer_ready"] is False
+
+    with pytest.raises(LeapError, match="not fully loaded in-world"):
+        service.touch_test_hud()
+
+
+def test_null_region_context_cannot_claim_viewer_ready(service):
+    service.leap.region_id = "00000000-0000-0000-0000-000000000000"
+    service.leap.viewer_ready = False
+
+    context = service.viewer_context()
+    assert context["viewer_ready"] is False
+    assert context["region_id"] == "00000000-0000-0000-0000-000000000000"
+
+
+def test_selection_inspection_refuses_until_viewer_is_ready(service):
+    service.leap.startup_state = "STATE_PRECACHE"
+    service.leap.viewer_ready = False
+
+    with pytest.raises(LeapError, match="not fully loaded in-world"):
+        service.inspect_selected_target()
 
 
 def test_inspect_and_revalidate_selected_self_owned_target(service):

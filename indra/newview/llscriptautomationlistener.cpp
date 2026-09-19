@@ -22,6 +22,7 @@
 #include "llsdutil.h"
 #include "llsdutil_math.h"
 #include "llselectmgr.h"
+#include "llstartup.h"
 #include "message.h"
 #include "llviewerassetupload.h"
 #include "llviewerinventory.h"
@@ -68,25 +69,58 @@ void post_error(const LLSD& request, const std::string& message)
 LLSD viewer_context()
 {
     LLSD context;
+    const EStartupState startup_state = LLStartUp::getStartupState();
+    context["startup_state"] = LLStartUp::getStartupStateString();
+    context["avatar_id"] = LLUUID::null;
+    context["avatar_name"] = "";
+    context["grid_id"] = "";
+    context["grid_label"] = "";
+    context["logged_in"] = false;
+    context["viewer_ready"] = false;
+    context["region_id"] = LLUUID::null;
+    context["region_name"] = "";
+
+    // Login mutates the agent, grid, and region objects. Read none of them
+    // until Firestorm says world startup is complete.
+    if (startup_state != STATE_STARTED)
+    {
+        return context;
+    }
+
     context["avatar_id"] = gAgentID;
     context["avatar_name"] = gAgentUsername;
     context["grid_id"] = LLGridManager::getInstance()->getGridId();
     context["grid_label"] = LLGridManager::getInstance()->getGridLabel();
-    context["logged_in"] = gAgentID.notNull() && gAgent.getRegion();
+    context["logged_in"] = gAgentID.notNull();
+    if (gAgentID.isNull())
+    {
+        return context;
+    }
 
-    if (LLViewerRegion* region = gAgent.getRegion())
+    LLViewerRegion* region = gAgent.getRegion();
+    if (!region || region->getRegionID().isNull())
     {
-        context["region_id"] = region->getRegionID();
-        context["region_name"] = region->getName();
-        context["agent_position_region"] = ll_sd_from_vector3(gAgent.getPositionAgent());
-        context["agent_position_global"] = ll_sd_from_vector3d(gAgent.getPositionGlobal());
+        return context;
     }
-    else
-    {
-        context["region_id"] = LLUUID::null;
-        context["region_name"] = "";
-    }
+
+    context["viewer_ready"] = true;
+    context["region_id"] = region->getRegionID();
+    context["region_name"] = region->getName();
+    context["agent_position_region"] = ll_sd_from_vector3(gAgent.getPositionAgent());
+    context["agent_position_global"] = ll_sd_from_vector3d(gAgent.getPositionGlobal());
     return context;
+}
+
+bool get_ready_region(LLViewerRegion*& region)
+{
+    region = nullptr;
+    if (LLStartUp::getStartupState() != STATE_STARTED || gAgentID.isNull())
+    {
+        return false;
+    }
+
+    region = gAgent.getRegion();
+    return region && region->getRegionID().notNull();
 }
 
 S32 link_number_for(LLViewerObject* object, LLViewerObject* root)
@@ -120,9 +154,10 @@ S32 link_number_for(LLViewerObject* object, LLViewerObject* root)
 
 void inspect_selection(const LLSD& request)
 {
-    if (gAgentID.isNull() || !gAgent.getRegion())
+    LLViewerRegion* current_region = nullptr;
+    if (!get_ready_region(current_region))
     {
-        return post_error(request, "No avatar is logged in to a region");
+        return post_error(request, "Firestorm is not fully loaded in-world");
     }
 
     LLObjectSelectionHandle selection = LLSelectMgr::getInstance()->getSelection();
@@ -141,9 +176,15 @@ void inspect_selection(const LLSD& request)
     LLViewerObject* root = nullptr;
     for (LLObjectSelection::iterator iter = selection->begin(); iter != selection->end(); ++iter)
     {
-        LLViewerObject* object = (*iter)->getObject();
+        LLSelectNode* node = *iter;
+        LLViewerObject* object = node ? node->getObject() : nullptr;
+        if (!object || object->isDead() || !object->getRegion())
+        {
+            return post_error(request, "The selected object is no longer available");
+        }
         LLViewerObject* candidate_root = object ? object->getRootEdit() : nullptr;
-        if (!candidate_root)
+        if (!candidate_root || candidate_root->isDead() ||
+            !candidate_root->getRegion())
         {
             return post_error(request, "The selected object is no longer available");
         }
@@ -157,14 +198,15 @@ void inspect_selection(const LLSD& request)
 
     LLSelectNode* selected_node = selection->getFirstRootNode(nullptr, true);
     LLViewerObject* selected = selected_node ? selected_node->getObject() : nullptr;
-    if (!selected || !selected_node || !selected_node->mValid || !selected_node->mPermissions)
+    if (!selected_node || !selected || selected->isDead() ||
+        !selected_node->mValid || !selected_node->mPermissions)
     {
         return post_error(
             request,
             "The selected object's simulator properties are not complete; wait and inspect again");
     }
     if (!selected->getRegion() ||
-        selected->getRegion()->getRegionID() != gAgent.getRegion()->getRegionID())
+        selected->getRegion()->getRegionID() != current_region->getRegionID())
     {
         return post_error(request, "The selected object is not in the avatar's current region");
     }
@@ -208,7 +250,7 @@ void inspect_selection(const LLSD& request)
     reply["link_ids"].append(root->getID());
     for (LLViewerObject* child : root->getChildren())
     {
-        if (!child)
+        if (!child || child->isDead() || !child->getRegion())
         {
             return post_error(request, "The selected linkset changed during inspection");
         }
@@ -557,6 +599,13 @@ bool resolve_script(const LLSD& request,
                     LLViewerInventoryItem*& item,
                     std::string& error)
 {
+    LLViewerRegion* current_region = nullptr;
+    if (!get_ready_region(current_region))
+    {
+        error = "Firestorm is not fully loaded in-world";
+        return false;
+    }
+
     const LLUUID object_id = request["object_id"].asUUID();
     const LLUUID item_id = request["item_id"].asUUID();
     if (object_id.isNull() || item_id.isNull())
@@ -566,9 +615,14 @@ bool resolve_script(const LLSD& request,
     }
 
     object = gObjectList.findObject(object_id);
-    if (object.isNull())
+    if (object.isNull() || object->isDead() || !object->getRegion())
     {
         error = "The object is not currently available to the viewer";
+        return false;
+    }
+    if (object->getRegion()->getRegionID() != current_region->getRegionID())
+    {
+        error = "The object is not in the avatar's current region";
         return false;
     }
     if (!fetch_task_inventory(object, inventory, error))
@@ -587,6 +641,12 @@ bool resolve_script(const LLSD& request,
 
 void get_task_inventory_coro(LLSD request)
 {
+    LLViewerRegion* current_region = nullptr;
+    if (!get_ready_region(current_region))
+    {
+        return post_error(request, "Firestorm is not fully loaded in-world");
+    }
+
     const LLUUID object_id = request["object_id"].asUUID();
     if (object_id.isNull())
     {
@@ -594,9 +654,13 @@ void get_task_inventory_coro(LLSD request)
     }
 
     LLPointer<LLViewerObject> object = gObjectList.findObject(object_id);
-    if (object.isNull())
+    if (object.isNull() || object->isDead() || !object->getRegion())
     {
         return post_error(request, "The object is not currently available to the viewer");
+    }
+    if (object->getRegion()->getRegionID() != current_region->getRegionID())
+    {
+        return post_error(request, "The object is not in the avatar's current region");
     }
     if (!object->permModify() && !gAgent.isGodlike())
     {
@@ -702,7 +766,12 @@ void update_script_source_coro(LLSD request)
         return post_error(request, error);
     }
 
-    LLViewerRegion* region = object->getRegion();
+    LLViewerRegion* region = nullptr;
+    if (!get_ready_region(region) || object->isDead() ||
+        object->getRegion() != region)
+    {
+        return post_error(request, "Firestorm stopped being fully loaded before upload");
+    }
     const std::string url = region
         ? region->getCapability("UpdateScriptTask")
         : std::string();

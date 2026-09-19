@@ -46,6 +46,16 @@ modified viewer target compiles successfully, and the live selected-object
 proof passed on 2026-09-19 against the disposable self-owned `MCP POC ROOT`.
 No world-object mutation has been added.
 
+The custom viewer now exposes its authoritative startup state and a
+`viewer_ready` flag. Readiness is true only after Firestorm reaches
+`STATE_STARTED` with a non-null avatar and current region. Selection,
+task-inventory, touch, and script-write paths fail closed before that point so
+the bridge does not infer readiness from elapsed time or a transitional region.
+The live startup transition was verified on 2026-09-19: an MCP context request
+during `STATE_LOGIN_PROCESS_RESPONSE` and `STATE_PRECACHE` safely returned
+`viewer_ready: false`, then changed to true only at `STATE_STARTED`; attachment
+inventory subsequently contained exactly one allowlisted test HUD.
+
 Later-stage features in the roadmap are ideas and design targets only. They
 must not be implemented until the user explicitly approves a new stage.
 
@@ -91,6 +101,9 @@ must not be implemented until the user explicitly approves a new stage.
   ten-minute in-memory handle bound to one bridge/avatar session; strict
   self-owner, permission, region, linkset, metadata and inventory state are
   revalidated before that handle can be reused.
+- Viewer readiness comes from Firestorm's own startup state, not a timer.
+  Mutation paths require `STATE_STARTED`, a non-null avatar, and a valid current
+  region before object state is inspected or changed.
 - Workspace tools can access only roots named at bridge launch. `workspace_status`
   returns canonical hashes and mapping/status metadata. `preview_workspace_push`
   additionally writes a short-lived plan and unified diff outside Git only for
