@@ -14,6 +14,9 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `viewer_status`
 - `discover_viewer_apis`
 - `list_attachments`
+- `viewer_context`
+- `inspect_selected_target`
+- `revalidate_selected_target`
 - `touch_test_hud`
 - `capture_viewer`
 - `list_test_hud_scripts`
@@ -21,6 +24,16 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `add_third_touch_color`
 - `preview_test_hud_script_edit`
 - `apply_test_hud_script_edit`
+
+The three target-identity tools are read-only. `viewer_context` returns the
+non-secret identity of the bridge/avatar/grid/region session.
+`inspect_selected_target` accepts no object UUID and requires exactly one
+selected linkset. It returns object/link/permission metadata and a script
+summary, but only issues a ten-minute in-memory handle when the target is
+strictly owned by the logged-in avatar and modifiable. Group-owned or
+other-avatar-owned targets are reported as blocked. `revalidate_selected_target`
+rejects expired, cross-viewer or changed target state. Public target summaries
+do not include the runtime object or task-item UUIDs retained inside the handle.
 
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
@@ -129,6 +142,8 @@ Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. 
 - Host and Origin validation protect the HTTP endpoint from DNS rebinding.
 - Request size and session counts are limited.
 - Touch is restricted to a currently worn, explicitly allowlisted attachment name.
+- Selected-object inspection is read-only; names never authorize a target, and
+  only a strict self-owned, modifiable object can receive a session-bound handle.
 - Screenshots hide viewer UI by default.
 - The reversible script mutation is limited to exactly one
   script in the exact allowlisted worn test HUD; caller-supplied source and IDs

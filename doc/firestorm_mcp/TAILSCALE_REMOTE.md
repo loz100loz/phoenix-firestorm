@@ -16,6 +16,14 @@ manifest + saved .lsl   ---->   127.0.0.1:<viewer MCP port>
                                 Firestorm-owned LEAP bridge
 ```
 
+This is the direct Tailscale-to-MCP design. Tailscale Serve is the private HTTPS
+front door on the Firestorm PC and reverse-proxies to the MCP listener on that
+same PC. The watcher is not another server: it is an optional MCP client that
+turns a stable VS Code file-save event into a workspace status, preview, or
+push request. An interactive MCP client can use the same route for the bridge's
+other enabled controls, including explicit workspace pushes when no watcher is
+running. See [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md).
+
 Tailscale Serve terminates HTTPS and applies the tailnet access policy. The MCP
 bridge remains bound to `127.0.0.1` and continues to require its bearer token.
 Both layers are required.

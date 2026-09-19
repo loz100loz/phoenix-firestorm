@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,21 @@ class FakeLeap:
         self.script_source = "default\n{\n    touch_start(integer total) { llOwnerSay(\"ready\"); }\n}\n"
         self.script_updates: list[str] = []
         self.fail_next_compile = False
+        self.avatar_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        self.region_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        self.selected_root_id = "44444444-4444-4444-4444-444444444444"
+        self.selected_object_id = self.selected_root_id
+        self.selected_owner_id = self.avatar_id
+        self.selected_group_owned = False
+        self.selected_group_id = "00000000-0000-0000-0000-000000000000"
+        self.selected_can_modify = True
+        self.selected_name = "Disposable Selected Device"
+        self.selection_object_count = 1
+        self.selection_root_count = 1
+        self.additional_link_ids: list[str] = []
+        self.script_name = "MCP POC Controller"
+        self.inspect_selection_error: str | None = None
+        self.task_inventory_requests = 0
 
     def discover_apis(self, *, timeout: float = 15.0) -> dict[str, Any]:
         return {
@@ -33,7 +49,7 @@ class FakeLeap:
 
     def request(self, pump: str, data: dict[str, Any], *, timeout: float = 15.0):
         if pump == "LLAgent" and data["op"] == "getID":
-            return {"id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}
+            return {"id": self.avatar_id}
         if pump == "LLAgent" and data["op"] == "getAttachedObjectsList":
             return {
                 "attachments": [
@@ -49,17 +65,73 @@ class FakeLeap:
             Path(data["filename"]).write_bytes(PNG_1X1)
             return {"ok": True}
         if pump == "LLScriptAutomation" and data["op"] == "getTaskInventory":
+            self.task_inventory_requests += 1
             return {
                 "items": [
                     {
                         "item_id": "33333333-3333-3333-3333-333333333333",
-                        "name": "MCP POC Controller",
+                        "name": self.script_name,
                         "description": "Disposable proof script",
                         "is_script": True,
                         "can_copy": True,
                         "can_modify": True,
                     }
                 ]
+            }
+        if pump == "LLScriptAutomation" and data["op"] == "getViewerContext":
+            return {
+                "avatar_id": self.avatar_id,
+                "avatar_name": "ninja.nova",
+                "grid_id": "agni",
+                "grid_label": "Second Life",
+                "logged_in": True,
+                "region_id": self.region_id,
+                "region_name": "Synthetic Region",
+                "agent_position_region": [128.0, 128.0, 25.0],
+                "agent_position_global": [1000.0, 1000.0, 25.0],
+            }
+        if pump == "LLScriptAutomation" and data["op"] == "inspectSelection":
+            if self.inspect_selection_error:
+                raise LeapError(self.inspect_selection_error)
+            return {
+                "avatar_id": self.avatar_id,
+                "avatar_name": "ninja.nova",
+                "grid_id": "agni",
+                "grid_label": "Second Life",
+                "logged_in": True,
+                "region_id": self.region_id,
+                "region_name": "Synthetic Region",
+                "selection_object_count": self.selection_object_count,
+                "selection_root_count": self.selection_root_count,
+                "root_id": self.selected_root_id,
+                "object_id": self.selected_object_id,
+                "object_name": self.selected_name,
+                "object_description": "Synthetic selected-object fixture",
+                "root_name": self.selected_name,
+                "root_description": "Synthetic selected-object fixture",
+                "is_root": self.selected_object_id == self.selected_root_id,
+                "is_attachment": False,
+                "attachment_item_id": "00000000-0000-0000-0000-000000000000",
+                "link_number": 0 if not self.additional_link_ids else 1,
+                "link_count": 1 + len(self.additional_link_ids),
+                "face_count": 6,
+                "position_region": [130.0, 128.0, 25.0],
+                "position_global": [1002.0, 1000.0, 25.0],
+                "root_position_region": [130.0, 128.0, 25.0],
+                "owner_id": self.selected_owner_id,
+                "creator_id": self.avatar_id,
+                "group_id": self.selected_group_id,
+                "group_owned": self.selected_group_owned,
+                "owner_is_logged_in_avatar": (
+                    not self.selected_group_owned
+                    and self.selected_owner_id == self.avatar_id
+                ),
+                "can_modify": self.selected_can_modify,
+                "can_copy": True,
+                "can_move": True,
+                "can_transfer": True,
+                "properties_complete": True,
+                "link_ids": [self.selected_root_id, *self.additional_link_ids],
             }
         if pump == "LLScriptAutomation" and data["op"] == "getScriptSource":
             return {"source": self.script_source}
@@ -97,6 +169,196 @@ def test_status_and_attachments(service):
     assert status["required_stage0"] == {"LLAgent": True, "LLViewerWindow": True}
     attachments = service.list_attachments()
     assert attachments[0]["name"] == "MCP POC ROOT"
+
+
+def test_viewer_context_is_bound_to_one_bridge_session(service):
+    context = service.viewer_context()
+
+    assert context["logged_in"] is True
+    assert context["avatar_name"] == "ninja.nova"
+    assert context["region_name"] == "Synthetic Region"
+    assert context["session_fingerprint"] == service.session_fingerprint
+    assert "token" not in context
+
+
+def test_inspect_and_revalidate_selected_self_owned_target(service):
+    result = service.inspect_selected_target()
+
+    assert result["eligible_for_future_mutation"] is True
+    assert result["blocked_reason"] is None
+    assert len(result["target_handle"]) == 32
+    assert result["target"]["owner_relation"] == "self"
+    assert result["target"]["object_name"] == "Disposable Selected Device"
+    assert result["script_inventory"]["count"] == 1
+    assert result["script_inventory"]["source_returned"] is False
+    serialized = json.dumps(result, sort_keys=True)
+    assert "33333333-3333-3333-3333-333333333333" not in serialized
+    assert "44444444-4444-4444-4444-444444444444" not in serialized
+
+    revalidated = service.revalidate_selected_target(result["target_handle"])
+    assert revalidated["valid"] is True
+    assert revalidated["target"]["identity_sha256"] == result["target"]["identity_sha256"]
+
+
+def test_selected_other_owner_is_reported_but_not_issued_a_handle(service):
+    service.leap.selected_owner_id = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    result = service.inspect_selected_target()
+
+    assert result["eligible_for_future_mutation"] is False
+    assert result["target_handle"] is None
+    assert result["target"]["owner_relation"] == "other"
+    assert "not owned" in result["blocked_reason"]
+    assert result["script_inventory"]["count"] == 0
+    assert service.leap.task_inventory_requests == 0
+
+
+def test_selected_group_owned_target_is_blocked_by_default(service):
+    service.leap.selected_owner_id = "00000000-0000-0000-0000-000000000000"
+    service.leap.selected_group_owned = True
+    service.leap.selected_group_id = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+
+    result = service.inspect_selected_target()
+
+    assert result["eligible_for_future_mutation"] is False
+    assert result["target_handle"] is None
+    assert result["target"]["owner_relation"] == "group"
+    assert "Group-owned" in result["blocked_reason"]
+
+
+def test_target_handle_is_invalidated_when_selection_changes(service):
+    result = service.inspect_selected_target()
+    service.leap.selected_root_id = "55555555-5555-5555-5555-555555555555"
+    service.leap.selected_object_id = service.leap.selected_root_id
+
+    with pytest.raises(LeapError, match="selected target changed"):
+        service.revalidate_selected_target(result["target_handle"])
+    with pytest.raises(LeapError, match="unknown to this viewer session"):
+        service.revalidate_selected_target(result["target_handle"])
+
+
+def test_target_handle_is_invalidated_when_modify_permission_changes(service):
+    result = service.inspect_selected_target()
+    service.leap.selected_can_modify = False
+
+    with pytest.raises(LeapError, match="no longer eligible"):
+        service.revalidate_selected_target(result["target_handle"])
+    with pytest.raises(LeapError, match="unknown to this viewer session"):
+        service.revalidate_selected_target(result["target_handle"])
+
+
+def test_target_handle_is_invalidated_when_avatar_changes(service):
+    result = service.inspect_selected_target()
+    service.leap.avatar_id = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    service.leap.selected_owner_id = service.leap.avatar_id
+
+    with pytest.raises(LeapError, match="selected target changed"):
+        service.revalidate_selected_target(result["target_handle"])
+
+
+def test_target_handle_is_invalidated_when_region_changes(service):
+    result = service.inspect_selected_target()
+    service.leap.region_id = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+
+    with pytest.raises(LeapError, match="selected target changed"):
+        service.revalidate_selected_target(result["target_handle"])
+
+
+def test_target_handle_is_invalidated_when_script_inventory_changes(service):
+    result = service.inspect_selected_target()
+    service.leap.script_name = "Renamed Controller"
+
+    with pytest.raises(LeapError, match="selected target changed"):
+        service.revalidate_selected_target(result["target_handle"])
+
+
+def test_failed_live_reinspection_invalidates_target_handle(service):
+    result = service.inspect_selected_target()
+    service.leap.inspect_selection_error = "Select exactly one linkset"
+
+    with pytest.raises(LeapError, match="Select exactly one linkset"):
+        service.revalidate_selected_target(result["target_handle"])
+
+    service.leap.inspect_selection_error = None
+    with pytest.raises(LeapError, match="unknown to this viewer session"):
+        service.revalidate_selected_target(result["target_handle"])
+
+
+def test_inconsistent_ownership_response_is_rejected(service):
+    original_request = service.leap.request
+
+    def inconsistent_request(pump, data, *, timeout=15.0):
+        response = original_request(pump, data, timeout=timeout)
+        if pump == "LLScriptAutomation" and data["op"] == "inspectSelection":
+            response["owner_is_logged_in_avatar"] = False
+        return response
+
+    service.leap.request = inconsistent_request
+
+    with pytest.raises(LeapError, match="inconsistent selected-object ownership"):
+        service.inspect_selected_target()
+
+
+def test_multiple_individually_selected_prims_are_rejected_at_service_boundary(service):
+    service.leap.selection_object_count = 2
+    service.leap.selection_root_count = 0
+    service.leap.additional_link_ids = [
+        "55555555-5555-5555-5555-555555555555"
+    ]
+
+    with pytest.raises(LeapError, match="Select exactly one"):
+        service.inspect_selected_target()
+
+
+def test_one_whole_linkset_with_multiple_nodes_is_accepted(service):
+    service.leap.selection_object_count = 3
+    service.leap.selection_root_count = 1
+    service.leap.additional_link_ids = [
+        "55555555-5555-5555-5555-555555555555",
+        "66666666-6666-6666-6666-666666666666",
+    ]
+
+    result = service.inspect_selected_target()
+
+    assert result["eligible_for_future_mutation"] is True
+    assert result["target"]["selection_object_count"] == 3
+    assert result["target"]["selection_root_count"] == 1
+
+
+def test_target_handle_cannot_cross_viewer_sessions(tmp_path):
+    first = Stage0Service(
+        FakeLeap(),
+        tmp_path / "first-captures",
+        ("MCP POC ROOT",),
+        touch_cooldown=0,
+    )
+    second = Stage0Service(
+        FakeLeap(),
+        tmp_path / "second-captures",
+        ("MCP POC ROOT",),
+        touch_cooldown=0,
+    )
+    handle = first.inspect_selected_target()["target_handle"]
+
+    with pytest.raises(LeapError, match="unknown to this viewer session"):
+        second.revalidate_selected_target(handle)
+
+
+def test_target_handle_expires_without_extending_its_lifetime(tmp_path):
+    now = [100.0]
+    service = Stage0Service(
+        FakeLeap(),
+        tmp_path / "captures",
+        ("MCP POC ROOT",),
+        touch_cooldown=0,
+        target_handle_ttl=10.0,
+        monotonic_clock=lambda: now[0],
+    )
+    handle = service.inspect_selected_target()["target_handle"]
+    now[0] = 110.0
+
+    with pytest.raises(LeapError, match="target handle has expired"):
+        service.revalidate_selected_target(handle)
 
 
 def test_touch_is_limited_to_worn_allowlisted_attachment(service):

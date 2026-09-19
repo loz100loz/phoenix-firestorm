@@ -41,6 +41,13 @@ def test_fake_example_workspace_is_valid():
     assert sum(script.sync_mode == "on_save" for script in manifest.scripts) == 3
     assert sum(script.sync_mode == "manual" for script in manifest.scripts) == 1
 
+    door_source = (root / "devices" / "training-door" / "controller.lsl").read_text(
+        encoding="utf-8"
+    )
+    assert "is_open ?" not in door_source
+    assert "if (is_open)" in door_source
+    assert "else" in door_source
+
 
 def test_watcher_emits_one_debounced_save(tmp_path):
     source = write_workspace(tmp_path)

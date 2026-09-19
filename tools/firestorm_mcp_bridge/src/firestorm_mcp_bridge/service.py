@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from difflib import unified_diff
@@ -21,6 +22,7 @@ MAX_SCRIPT_SOURCE_BYTES = 64 * 1024
 MAX_PATCH_FRAGMENT_BYTES = 16 * 1024
 EDIT_PLAN_TTL = timedelta(minutes=30)
 EDIT_CONFIRMATION = "APPLY MCP POC ROOT"
+TARGET_HANDLE_TTL_SECONDS = 10 * 60.0
 
 
 @dataclass(frozen=True)
@@ -30,7 +32,7 @@ class Snapshot:
 
 
 class Stage0Service:
-    """Stage 0 operations plus guarded test-HUD script operations."""
+    """Guarded viewer operations plus read-only selected-target identity."""
 
     def __init__(
         self,
@@ -41,7 +43,11 @@ class Stage0Service:
         script_backup_dir: Path | None = None,
         request_timeout: float = 15.0,
         touch_cooldown: float = 1.0,
+        target_handle_ttl: float = TARGET_HANDLE_TTL_SECONDS,
+        monotonic_clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if target_handle_ttl <= 0:
+            raise ValueError("target_handle_ttl must be positive")
         self.leap = leap
         self.capture_dir = capture_dir.resolve()
         self.capture_dir.mkdir(parents=True, exist_ok=True)
@@ -54,9 +60,14 @@ class Stage0Service:
         self.allowed_attachment_names = tuple(dict.fromkeys(allowed_attachment_names))
         self.request_timeout = request_timeout
         self.touch_cooldown = touch_cooldown
+        self.target_handle_ttl = target_handle_ttl
+        self._monotonic_clock = monotonic_clock
+        self.session_fingerprint = uuid.uuid4().hex
         self._apis: dict[str, Any] | None = None
         self._touch_lock = threading.Lock()
         self._script_proof_lock = threading.Lock()
+        self._target_handle_lock = threading.Lock()
+        self._target_handles: dict[str, dict[str, Any]] = {}
         self._last_touch = 0.0
 
     def discover_viewer_apis(self, *, refresh: bool = False) -> dict[str, Any]:
@@ -93,7 +104,113 @@ class Stage0Service:
             "required_stage0": discovery["required_stage0"],
             "required_script_proof": discovery["required_script_proof"],
             "allowed_attachment_names": list(self.allowed_attachment_names),
+            "session_fingerprint": self.session_fingerprint,
         }
+
+    def viewer_context(self) -> dict[str, Any]:
+        """Return the non-secret identity of this viewer/avatar bridge session."""
+
+        self._require_api("LLScriptAutomation")
+        response = self.leap.request(
+            "LLScriptAutomation",
+            {"op": "getViewerContext"},
+            timeout=self.request_timeout,
+        )
+        avatar_id = self._validated_uuid(response.get("avatar_id"), "avatar")
+        region_id = self._validated_uuid(response.get("region_id"), "region")
+        logged_in = bool(response.get("logged_in"))
+        if logged_in and (avatar_id == NULL_UUID or region_id == NULL_UUID):
+            raise LeapError("Firestorm returned an incomplete logged-in viewer context")
+        return {
+            "session_fingerprint": self.session_fingerprint,
+            "leap_connected": self.leap.connected,
+            "logged_in": logged_in,
+            "avatar_id": avatar_id,
+            "avatar_name": str(response.get("avatar_name", "")),
+            "grid_id": str(response.get("grid_id", "")),
+            "grid_label": str(response.get("grid_label", "")),
+            "region_id": region_id,
+            "region_name": str(response.get("region_name", "")),
+            "agent_position_region": response.get("agent_position_region"),
+            "agent_position_global": response.get("agent_position_global"),
+        }
+
+    def inspect_selected_target(self) -> dict[str, Any]:
+        """Inspect one selected linkset and issue a handle only for a safe target."""
+
+        raw, scripts, identity, identity_sha256 = self._read_selected_target()
+        eligible, blocked_reason = self._target_eligibility(raw)
+        result = self._public_target_summary(raw, scripts, identity_sha256)
+        result["eligible_for_future_mutation"] = eligible
+        result["blocked_reason"] = blocked_reason
+        result["target_handle"] = None
+        result["expires_at"] = None
+
+        if not eligible:
+            return result
+
+        now = self._monotonic_clock()
+        target_handle = uuid.uuid4().hex
+        expires_at = datetime.now(UTC) + timedelta(seconds=self.target_handle_ttl)
+        with self._target_handle_lock:
+            self._cleanup_expired_target_handles(now)
+            self._target_handles[target_handle] = {
+                "identity": identity,
+                "identity_sha256": identity_sha256,
+                "expires_monotonic": now + self.target_handle_ttl,
+                "expires_at": expires_at.isoformat(),
+            }
+        result["target_handle"] = target_handle
+        result["expires_at"] = expires_at.isoformat()
+        return result
+
+    def revalidate_selected_target(self, target_handle: str) -> dict[str, Any]:
+        """Re-resolve a selected target and reject expired or changed identity."""
+
+        if not re.fullmatch(r"[0-9a-f]{32}", target_handle):
+            raise LeapError("target_handle must be a 32-character lowercase hexadecimal value")
+        now = self._monotonic_clock()
+        with self._target_handle_lock:
+            entry = self._target_handles.get(target_handle)
+            if entry is None:
+                raise LeapError("The target handle is unknown to this viewer session")
+            if now >= float(entry["expires_monotonic"]):
+                self._target_handles.pop(target_handle, None)
+                raise LeapError("The target handle has expired")
+
+        try:
+            raw, scripts, identity, identity_sha256 = self._read_selected_target()
+        except Exception:
+            with self._target_handle_lock:
+                self._target_handles.pop(target_handle, None)
+            raise
+        eligible, blocked_reason = self._target_eligibility(raw)
+        if not eligible:
+            with self._target_handle_lock:
+                self._target_handles.pop(target_handle, None)
+            raise LeapError(f"The selected target is no longer eligible: {blocked_reason}")
+        if identity != entry["identity"] or identity_sha256 != entry["identity_sha256"]:
+            with self._target_handle_lock:
+                self._target_handles.pop(target_handle, None)
+            raise LeapError("The selected target changed; the stale handle was invalidated")
+
+        finish_now = self._monotonic_clock()
+        with self._target_handle_lock:
+            if self._target_handles.get(target_handle) is not entry:
+                raise LeapError("The target handle was invalidated during revalidation")
+            if finish_now >= float(entry["expires_monotonic"]):
+                self._target_handles.pop(target_handle, None)
+                raise LeapError("The target handle expired during revalidation")
+
+        result = self._public_target_summary(raw, scripts, identity_sha256)
+        result.update(
+            {
+                "valid": True,
+                "target_handle": target_handle,
+                "expires_at": str(entry["expires_at"]),
+            }
+        )
+        return result
 
     def list_attachments(self) -> list[dict[str, Any]]:
         self._require_api("LLAgent")
@@ -554,6 +671,241 @@ class Stage0Service:
                 "bytes": filename.stat().st_size,
             },
         )
+
+    def _read_selected_target(
+        self,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], str]:
+        self._require_api("LLScriptAutomation")
+        response = self.leap.request(
+            "LLScriptAutomation",
+            {"op": "inspectSelection"},
+            timeout=self.request_timeout,
+        )
+        raw = dict(response)
+
+        for field, label in (
+            ("avatar_id", "avatar"),
+            ("region_id", "region"),
+            ("root_id", "selected root"),
+            ("object_id", "selected object"),
+            ("owner_id", "selected owner"),
+            ("creator_id", "selected creator"),
+            ("group_id", "selected group"),
+            ("attachment_item_id", "attachment item"),
+        ):
+            raw[field] = self._validated_uuid(raw.get(field), label)
+        for field in ("avatar_id", "region_id", "root_id", "object_id"):
+            if raw[field] == NULL_UUID:
+                raise LeapError(f"Firestorm returned a null {field.replace('_', ' ')}")
+        if bool(raw.get("group_owned")):
+            if raw["group_id"] == NULL_UUID:
+                raise LeapError("Firestorm returned a group-owned target without a group id")
+        elif raw["owner_id"] == NULL_UUID:
+            raise LeapError("Firestorm returned a null owner id")
+
+        link_ids = raw.get("link_ids")
+        if not isinstance(link_ids, list) or not link_ids:
+            raise LeapError("Firestorm returned an invalid selected linkset identity")
+        raw["link_ids"] = [
+            self._validated_uuid(value, "linkset object") for value in link_ids
+        ]
+        if any(value == NULL_UUID for value in raw["link_ids"]):
+            raise LeapError("Firestorm returned a null linkset object UUID")
+
+        try:
+            raw["selection_object_count"] = int(raw.get("selection_object_count"))
+            raw["selection_root_count"] = int(raw.get("selection_root_count"))
+            raw["link_number"] = int(raw.get("link_number"))
+            raw["link_count"] = int(raw.get("link_count"))
+            raw["face_count"] = int(raw.get("face_count"))
+        except (TypeError, ValueError) as exc:
+            raise LeapError("Firestorm returned invalid selected-object counts") from exc
+        if raw["link_count"] != len(raw["link_ids"]):
+            raise LeapError("The selected linkset changed while Firestorm described it")
+        if not 1 <= raw["selection_object_count"] <= raw["link_count"]:
+            raise LeapError("Firestorm returned an invalid selected-object count")
+        if (
+            raw["selection_root_count"] != 1
+            and raw["selection_object_count"] != 1
+        ):
+            raise LeapError("Select exactly one linkset or one linked prim in Firestorm")
+        if raw["selection_root_count"] not in (0, 1):
+            raise LeapError("Firestorm returned an ambiguous selected-linkset count")
+        if len(set(raw["link_ids"])) != len(raw["link_ids"]):
+            raise LeapError("Firestorm returned duplicate linkset object UUIDs")
+        if raw["link_ids"][0] != raw["root_id"]:
+            raise LeapError("Firestorm returned an inconsistent selected root identity")
+        if raw["object_id"] not in raw["link_ids"]:
+            raise LeapError("Firestorm returned a selected object outside its linkset")
+        expected_is_root = raw["object_id"] == raw["root_id"]
+        if bool(raw.get("is_root")) != expected_is_root:
+            raise LeapError("Firestorm returned an inconsistent selected-object role")
+        expected_link_number = (
+            0
+            if expected_is_root and raw["link_count"] == 1
+            else raw["link_ids"].index(raw["object_id"]) + 1
+        )
+        if raw["link_number"] != expected_link_number:
+            raise LeapError("Firestorm returned an invalid selected link number")
+        if not raw.get("logged_in") or not raw.get("properties_complete"):
+            raise LeapError("Firestorm returned an incomplete selected-object context")
+
+        expected_self_owned = (
+            not bool(raw.get("group_owned")) and raw["owner_id"] == raw["avatar_id"]
+        )
+        if bool(raw.get("owner_is_logged_in_avatar")) != expected_self_owned:
+            raise LeapError("Firestorm returned inconsistent selected-object ownership")
+
+        eligible, _ = self._target_eligibility(raw)
+        scripts: list[dict[str, Any]] = []
+        if eligible:
+            inventory_response = self.leap.request(
+                "LLScriptAutomation",
+                {"op": "getTaskInventory", "object_id": raw["object_id"]},
+                timeout=max(self.request_timeout, 45.0),
+            )
+            items = inventory_response.get("items")
+            if not isinstance(items, list):
+                raise LeapError("Firestorm returned an invalid selected-object inventory")
+            for item in items:
+                if not isinstance(item, dict) or not item.get("is_script"):
+                    continue
+                script = dict(item)
+                script["item_id"] = self._validated_uuid(
+                    script.get("item_id"), "selected script item"
+                )
+                if script["item_id"] == NULL_UUID:
+                    raise LeapError("Firestorm returned a null selected script item UUID")
+                scripts.append(script)
+            scripts.sort(key=lambda item: (str(item.get("name", "")), item["item_id"]))
+
+        identity = {
+            "session_fingerprint": self.session_fingerprint,
+            "avatar_id": raw["avatar_id"],
+            "grid_id": str(raw.get("grid_id", "")),
+            "region_id": raw["region_id"],
+            "root_id": raw["root_id"],
+            "object_id": raw["object_id"],
+            "owner_id": raw["owner_id"],
+            "creator_id": raw["creator_id"],
+            "group_id": raw["group_id"],
+            "attachment_item_id": raw["attachment_item_id"],
+            "link_ids": raw["link_ids"],
+            "object_name": str(raw.get("object_name", "")),
+            "object_description": str(raw.get("object_description", "")),
+            "root_name": str(raw.get("root_name", "")),
+            "root_description": str(raw.get("root_description", "")),
+            "selection_object_count": raw["selection_object_count"],
+            "selection_root_count": raw["selection_root_count"],
+            "link_number": raw["link_number"],
+            "link_count": raw["link_count"],
+            "face_count": raw["face_count"],
+            "is_root": bool(raw.get("is_root")),
+            "is_attachment": bool(raw.get("is_attachment")),
+            "position_region": raw.get("position_region"),
+            "root_position_region": raw.get("root_position_region"),
+            "group_owned": bool(raw.get("group_owned")),
+            "can_modify": bool(raw.get("can_modify")),
+            "can_copy": bool(raw.get("can_copy")),
+            "can_move": bool(raw.get("can_move")),
+            "can_transfer": bool(raw.get("can_transfer")),
+            "scripts": [
+                {
+                    "item_id": item["item_id"],
+                    "name": str(item.get("name", "")),
+                    "description": str(item.get("description", "")),
+                    "can_copy": bool(item.get("can_copy")),
+                    "can_modify": bool(item.get("can_modify")),
+                    "can_transfer": bool(item.get("can_transfer")),
+                }
+                for item in scripts
+            ],
+        }
+        serialized = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        identity_sha256 = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        return raw, scripts, identity, identity_sha256
+
+    @staticmethod
+    def _target_eligibility(raw: dict[str, Any]) -> tuple[bool, str | None]:
+        if bool(raw.get("group_owned")):
+            return False, "Group-owned targets are disabled by the strict self-owner policy"
+        if not bool(raw.get("owner_is_logged_in_avatar")):
+            return False, "The selected object is not owned by the logged-in avatar"
+        if not bool(raw.get("can_modify")):
+            return False, "The logged-in avatar cannot modify the selected object"
+        return True, None
+
+    def _public_target_summary(
+        self,
+        raw: dict[str, Any],
+        scripts: list[dict[str, Any]],
+        identity_sha256: str,
+    ) -> dict[str, Any]:
+        owner_relation = "self"
+        if raw.get("group_owned"):
+            owner_relation = "group"
+        elif not raw.get("owner_is_logged_in_avatar"):
+            owner_relation = "other"
+        return {
+            "viewer": {
+                "session_fingerprint": self.session_fingerprint,
+                "avatar_id": raw["avatar_id"],
+                "avatar_name": str(raw.get("avatar_name", "")),
+                "grid_id": str(raw.get("grid_id", "")),
+                "grid_label": str(raw.get("grid_label", "")),
+                "region_id": raw["region_id"],
+                "region_name": str(raw.get("region_name", "")),
+            },
+            "target": {
+                "identity_sha256": identity_sha256,
+                "object_name": str(raw.get("object_name", "")),
+                "object_description": str(raw.get("object_description", "")),
+                "root_name": str(raw.get("root_name", "")),
+                "root_description": str(raw.get("root_description", "")),
+                "selection_object_count": raw["selection_object_count"],
+                "selection_root_count": raw["selection_root_count"],
+                "link_number": raw["link_number"],
+                "link_count": raw["link_count"],
+                "face_count": raw["face_count"],
+                "is_root": bool(raw.get("is_root")),
+                "is_attachment": bool(raw.get("is_attachment")),
+                "position_region": raw.get("position_region"),
+                "root_position_region": raw.get("root_position_region"),
+                "owner_relation": owner_relation,
+                "owner_is_logged_in_avatar": bool(
+                    raw.get("owner_is_logged_in_avatar")
+                ),
+                "group_owned": bool(raw.get("group_owned")),
+                "can_modify": bool(raw.get("can_modify")),
+                "can_copy": bool(raw.get("can_copy")),
+                "can_move": bool(raw.get("can_move")),
+                "can_transfer": bool(raw.get("can_transfer")),
+                "properties_complete": bool(raw.get("properties_complete")),
+            },
+            "script_inventory": {
+                "count": len(scripts),
+                "source_returned": False,
+                "scripts": [
+                    {
+                        "name": str(item.get("name", "")),
+                        "description": str(item.get("description", "")),
+                        "can_copy": bool(item.get("can_copy")),
+                        "can_modify": bool(item.get("can_modify")),
+                        "can_transfer": bool(item.get("can_transfer")),
+                    }
+                    for item in scripts
+                ],
+            },
+        }
+
+    def _cleanup_expired_target_handles(self, now: float) -> None:
+        expired = [
+            handle
+            for handle, entry in self._target_handles.items()
+            if now >= float(entry["expires_monotonic"])
+        ]
+        for handle in expired:
+            self._target_handles.pop(handle, None)
 
     def _require_api(self, name: str) -> None:
         discovery = self.discover_viewer_apis()

@@ -26,6 +26,14 @@ folders. A synthetic three-device workspace plus validated, debounced save
 detection is implemented without accessing the real game project or uploading
 to live objects. Private Tailscale transport is designed but not configured.
 
+The approved read-only target-identity foundation is also implemented and
+automated-tested. It reports per-viewer avatar/grid/region context, inspects one
+selected linkset, enforces strict self-ownership before returning an expiring
+session-bound target handle, and rejects stale or cross-viewer handles. The
+modified viewer target compiles successfully. A live selected-object proof still
+requires restarting the side-by-side custom viewer with the new binary; no
+world-object mutation has been added.
+
 Later-stage features in the roadmap are ideas and design targets only. They
 must not be implemented until the user explicitly approves a new stage.
 
@@ -40,6 +48,8 @@ must not be implemented until the user explicitly approves a new stage.
 | [`STAGE_2_SCRIPT_WRITE_PROOF.md`](STAGE_2_SCRIPT_WRITE_PROOF.md) | Approved safety contract, implementation status, verification order, and eventual live result for the reversible test-HUD script proof | Read before script API work or any live script write; update with every material result |
 | [`WORKSPACE_SYNC.md`](WORKSPACE_SYNC.md) | Target VS Code-to-Firestorm device/script workflow, manifest shape, transaction model, and staged expansion boundary | Read before adding local-file sync or world-object targeting |
 | [`TAILSCALE_REMOTE.md`](TAILSCALE_REMOTE.md) | Tailnet-only remote transport design, current gaps, commands, access controls, and rollback | Read before changing bind, proxy, authentication, or remote-client settings |
+| [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md) | Current, pending, and possible Firestorm MCP controls plus the watcher/Tailscale relationship | Read when choosing what to build or explaining local and remote control scope |
+| [`TARGET_IDENTITY_SECURITY.md`](TARGET_IDENTITY_SECURITY.md) | Avatar/session binding, duplicate-name handling, selected-object identity, ownership checks and safety policy for expanded controls | Read before any world-object, dialog, movement, creation, rez, attach or general-control work |
 | [`tools/firestorm_mcp_bridge/README.md`](../../tools/firestorm_mcp_bridge/README.md) | Bridge setup, launch instructions, tools, runtime files, and safety boundary | Read before setup/launch; update with operational or tool changes |
 | [`doc/building_windows.md`](../building_windows.md) | Upstream Firestorm Windows build instructions | Read only if an approved later stage requires building the viewer |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | Upstream repository contribution rules | Read before broader viewer changes or upstream contribution work |
@@ -49,12 +59,12 @@ must not be implemented until the user explicitly approves a new stage.
 | Path | Responsibility |
 | --- | --- |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/leap.py` | Length-prefixed LLSD LEAP transport, request correlation, and API discovery |
-| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy plus guarded proof, three-color, and two-step test-HUD edit transactions |
+| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy, guarded test-HUD transactions, and read-only session-bound target identity handles |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/server.py` | Authenticated localhost MCP server, tools, launch config, and session descriptor |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/workspace.py` | Manifest validation, path containment, source validation, and debounced local-save detection |
 | `tools/firestorm_mcp_bridge/launch_installed_firestorm.ps1` | Safe installed-viewer launch, side-by-side channel selection, multi-login isolation, and Firestorm-version argument compatibility |
 | `tools/firestorm_mcp_bridge/tests/` | LEAP, service, server, MCP, and process smoke tests |
-| `indra/newview/llscriptautomationlistener.*` | Permission-preserving LEAP task-inventory, source retrieval, and source update operations for the approved proof |
+| `indra/newview/llscriptautomationlistener.*` | Viewer/avatar context, selected-object inspection, and permission-preserving task-inventory/source operations |
 
 ## Architectural decisions
 
@@ -65,6 +75,10 @@ must not be implemented until the user explicitly approves a new stage.
 - A touch target is resolved from the avatar's current attachments immediately
   before the operation. The tool accepts an exact allowlisted name, not an
   arbitrary object UUID.
+- World-object names are display labels only. Read-only selected targets use a
+  ten-minute in-memory handle bound to one bridge/avatar session; strict
+  self-owner, permission, region, linkset, metadata and inventory state are
+  revalidated before that handle can be reused.
 - Runtime session descriptors and screenshots stay under
   `%LOCALAPPDATA%\FirestormMCP` and must not be committed.
 - Multi-login viewers receive separate ports, session descriptors, and capture
@@ -81,7 +95,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Stage | Status | Scope |
 | --- | --- | --- |
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
-| Stage 1 | Not approved or implemented | Linkset/task-inventory inspection and permission metadata |
+| Stage 1 | Implemented and build-tested; live proof pending | Viewer/avatar context, selected-linkset inspection, strict self-owner gate, permission/script summary, expiring handle and stale/cross-viewer rejection; no world-object writes |
 | Stage 2 | Proof, three-color edit, and reusable test-HUD editor live-passed | Exact test-HUD task inventory, permitted retrieval, reversible proof, fixed color edit, and bounded preview/apply transactions; no other objects |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |

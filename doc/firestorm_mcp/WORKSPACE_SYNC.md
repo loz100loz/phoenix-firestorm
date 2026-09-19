@@ -13,6 +13,25 @@ The project folder can live on another tailnet device. In that layout, the
 watcher runs beside VS Code and sends only the mapped saved script over private
 HTTPS to the Firestorm PC; the Firestorm PC does not mount or scan the project.
 
+## Two operating modes
+
+The MCP workspace tools are the primary interface and do not depend on a
+watcher:
+
+1. An AI or developer edits and saves a local `.lsl` file.
+2. The AI explicitly calls workspace status or preview for the mapped script.
+3. After review/confirmation, the AI calls apply to upload, compile,
+   exact-read-verify, and optionally run a mapped test.
+
+This manual/on-demand mode remains fully usable when the watcher is stopped or
+disabled. It is the default for production mappings and multi-script changes.
+
+The watcher is an optional convenience client. For a mapping explicitly marked
+`on_save`, it detects a stable save after the debounce interval and invokes the
+same underlying MCP workflow. It does not provide a separate server or a
+different set of Firestorm controls. A project may freely mix `manual` and
+`on_save` mappings.
+
 ## Intended project shape
 
 ```text
@@ -75,8 +94,9 @@ before every operation.
    rezzed disposable device, with the same permission and ambiguity gates.
 4. **Device sets:** multiple mapped scripts per device, deterministic compile
    ordering, per-file results, and configurable stop/rollback behavior.
-5. **Development loop:** file watching or an explicit VS Code task for
-   preview, push, compile diagnostics, and optional runtime checks.
+5. **Development loop:** direct AI/MCP calls are the primary path; optional
+   file watching or an explicit VS Code task can invoke the same preview, push,
+   compile-diagnostic, and runtime-check tools.
 
 Stages 3 and later require a separate live safety proof before production game
 objects are allowed.

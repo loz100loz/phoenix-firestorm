@@ -12,6 +12,7 @@
 #include "llscriptautomationlistener.h"
 
 #include "llagent.h"
+#include "llagentdata.h"
 #include "llassetstorage.h"
 #include "llcoros.h"
 #include "lleventcoro.h"
@@ -19,6 +20,8 @@
 #include "llexperiencecache.h"
 #include "llfilesystem.h"
 #include "llsdutil.h"
+#include "llsdutil_math.h"
+#include "llselectmgr.h"
 #include "message.h"
 #include "llviewerassetupload.h"
 #include "llviewerinventory.h"
@@ -26,11 +29,13 @@
 #include "llviewerobjectlist.h"
 #include "llviewerregion.h"
 #include "llvoinventorylistener.h"
+#include "fsgridhandler.h"
 #include "roles_constants.h"
 #include "rlvhandler.h"
 #include "rlvlocks.h"
 
 #include <memory>
+#include <set>
 
 namespace
 {
@@ -57,6 +62,158 @@ void post_error(const LLSD& request, const std::string& message)
 {
     LLSD reply;
     reply["error"] = message;
+    post_reply(request, reply);
+}
+
+LLSD viewer_context()
+{
+    LLSD context;
+    context["avatar_id"] = gAgentID;
+    context["avatar_name"] = gAgentUsername;
+    context["grid_id"] = LLGridManager::getInstance()->getGridId();
+    context["grid_label"] = LLGridManager::getInstance()->getGridLabel();
+    context["logged_in"] = gAgentID.notNull() && gAgent.getRegion();
+
+    if (LLViewerRegion* region = gAgent.getRegion())
+    {
+        context["region_id"] = region->getRegionID();
+        context["region_name"] = region->getName();
+        context["agent_position_region"] = ll_sd_from_vector3(gAgent.getPositionAgent());
+        context["agent_position_global"] = ll_sd_from_vector3d(gAgent.getPositionGlobal());
+    }
+    else
+    {
+        context["region_id"] = LLUUID::null;
+        context["region_name"] = "";
+    }
+    return context;
+}
+
+S32 link_number_for(LLViewerObject* object, LLViewerObject* root)
+{
+    if (!object || !root)
+    {
+        return -1;
+    }
+
+    const LLViewerObject::child_list_t& children = root->getChildren();
+    if (children.empty())
+    {
+        return 0;
+    }
+    if (object == root)
+    {
+        return 1;
+    }
+
+    S32 link_number = 2;
+    for (LLViewerObject* child : children)
+    {
+        if (child == object)
+        {
+            return link_number;
+        }
+        ++link_number;
+    }
+    return -1;
+}
+
+void inspect_selection(const LLSD& request)
+{
+    if (gAgentID.isNull() || !gAgent.getRegion())
+    {
+        return post_error(request, "No avatar is logged in to a region");
+    }
+
+    LLObjectSelectionHandle selection = LLSelectMgr::getInstance()->getSelection();
+    if (selection.isNull() || selection->isEmpty())
+    {
+        return post_error(request, "Select exactly one object or linked prim in Firestorm");
+    }
+    const S32 selection_object_count = selection->getObjectCount();
+    const S32 selection_root_count = selection->getRootObjectCount();
+    if (selection_root_count != 1 && selection_object_count != 1)
+    {
+        return post_error(request, "Select exactly one linkset or one linked prim in Firestorm");
+    }
+
+    std::set<LLUUID> root_ids;
+    LLViewerObject* root = nullptr;
+    for (LLObjectSelection::iterator iter = selection->begin(); iter != selection->end(); ++iter)
+    {
+        LLViewerObject* object = (*iter)->getObject();
+        LLViewerObject* candidate_root = object ? object->getRootEdit() : nullptr;
+        if (!candidate_root)
+        {
+            return post_error(request, "The selected object is no longer available");
+        }
+        root_ids.insert(candidate_root->getID());
+        root = candidate_root;
+    }
+    if (root_ids.size() != 1 || !root)
+    {
+        return post_error(request, "The selection contains more than one object root");
+    }
+
+    LLSelectNode* selected_node = selection->getFirstRootNode(nullptr, true);
+    LLViewerObject* selected = selected_node ? selected_node->getObject() : nullptr;
+    if (!selected || !selected_node || !selected_node->mValid || !selected_node->mPermissions)
+    {
+        return post_error(
+            request,
+            "The selected object's simulator properties are not complete; wait and inspect again");
+    }
+    if (!selected->getRegion() ||
+        selected->getRegion()->getRegionID() != gAgent.getRegion()->getRegionID())
+    {
+        return post_error(request, "The selected object is not in the avatar's current region");
+    }
+
+    LLSelectNode* root_node = selection->findNode(root);
+    const LLPermissions& permissions = *selected_node->mPermissions;
+    const bool group_owned = permissions.isGroupOwned();
+    const bool self_owned = !group_owned && permissions.getOwner() == gAgentID;
+
+    LLSD reply = viewer_context();
+    reply["selection_object_count"] = selection_object_count;
+    reply["selection_root_count"] = selection_root_count;
+    reply["root_id"] = root->getID();
+    reply["object_id"] = selected->getID();
+    reply["object_name"] = selected_node->mName;
+    reply["object_description"] = selected_node->mDescription;
+    reply["root_name"] = root_node && root_node->mValid ? root_node->mName : "";
+    reply["root_description"] = root_node && root_node->mValid
+        ? root_node->mDescription
+        : "";
+    reply["is_root"] = selected == root;
+    reply["is_attachment"] = root->isAttachment();
+    reply["attachment_item_id"] = root->getAttachmentItemID();
+    reply["link_number"] = link_number_for(selected, root);
+    reply["link_count"] = LLSD::Integer(static_cast<S32>(root->getChildren().size()) + 1);
+    reply["face_count"] = selected->getNumFaces();
+    reply["position_region"] = ll_sd_from_vector3(selected->getPositionRegion());
+    reply["position_global"] = ll_sd_from_vector3d(selected->getPositionGlobal());
+    reply["root_position_region"] = ll_sd_from_vector3(root->getPositionRegion());
+    reply["owner_id"] = permissions.getOwner();
+    reply["creator_id"] = permissions.getCreator();
+    reply["group_id"] = permissions.getGroup();
+    reply["group_owned"] = group_owned;
+    reply["owner_is_logged_in_avatar"] = self_owned;
+    reply["can_modify"] = selected->permModify();
+    reply["can_copy"] = selected->permCopy();
+    reply["can_move"] = selected->permMove();
+    reply["can_transfer"] = selected->permTransfer();
+    reply["properties_complete"] = true;
+    reply["link_ids"] = LLSD::emptyArray();
+    reply["link_ids"].append(root->getID());
+    for (LLViewerObject* child : root->getChildren())
+    {
+        if (!child)
+        {
+            return post_error(request, "The selected linkset changed during inspection");
+        }
+        reply["link_ids"].append(child->getID());
+    }
     post_reply(request, reply);
 }
 
@@ -618,6 +775,14 @@ LLScriptAutomationListener::LLScriptAutomationListener()
           "LLScriptAutomation",
           "Permission-preserving task inventory and LSL source operations")
 {
+    add("getViewerContext",
+        "Return the current avatar, grid and region without exposing the viewer session credential",
+        &LLScriptAutomationListener::getViewerContext,
+        llsd::map("reply", LLSD()));
+    add("inspectSelection",
+        "Inspect exactly one selected object root or linked prim without modifying it",
+        &LLScriptAutomationListener::inspectSelection,
+        llsd::map("reply", LLSD()));
     add("getTaskInventory",
         "Fetch task inventory for [\"object_id\"] and return [\"items\"]",
         &LLScriptAutomationListener::getTaskInventory,
@@ -630,6 +795,16 @@ LLScriptAutomationListener::LLScriptAutomationListener()
         "Compile and update permitted task LSL source while preserving runtime state, VM target and experience",
         &LLScriptAutomationListener::updateScriptSource,
         llsd::map("object_id", LLSD(), "item_id", LLSD(), "source", LLSD(), "reply", LLSD()));
+}
+
+void LLScriptAutomationListener::getViewerContext(const LLSD& request) const
+{
+    post_reply(request, viewer_context());
+}
+
+void LLScriptAutomationListener::inspectSelection(const LLSD& request) const
+{
+    inspect_selection(request);
 }
 
 void LLScriptAutomationListener::getTaskInventory(const LLSD& request) const

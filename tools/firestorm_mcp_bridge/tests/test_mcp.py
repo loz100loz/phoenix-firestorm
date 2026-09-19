@@ -25,6 +25,9 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
                 "viewer_status",
                 "discover_viewer_apis",
                 "list_attachments",
+                "viewer_context",
+                "inspect_selected_target",
+                "revalidate_selected_target",
                 "touch_test_hud",
                 "list_test_hud_scripts",
                 "prove_test_hud_script_round_trip",
@@ -37,6 +40,10 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
             status = await client.call_tool("viewer_status", {})
             assert status.is_error is False
             assert status.structured_content["logged_in"] is True
+
+            context = await client.call_tool("viewer_context", {})
+            assert context.is_error is False
+            assert context.structured_content["avatar_name"] == "ninja.nova"
 
             screenshot = await client.call_tool(
                 "capture_viewer",

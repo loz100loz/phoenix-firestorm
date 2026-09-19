@@ -73,9 +73,10 @@ def create_mcp_server(
     mcp = MCPServer(
         name="Firestorm MCP Proof of Concept",
         description=(
-            "Narrow proof-of-concept bridge for viewer discovery, worn test-HUD touch, "
-            "HUD-visible screenshots, and guarded write/compile/verify transactions limited "
-            "to the sole script in an exact allowlisted worn test HUD."
+            "Proof-of-concept bridge for viewer discovery, read-only selected-target "
+            "identity, worn test-HUD touch, HUD-visible screenshots, and guarded "
+            "write/compile/verify transactions limited to the sole script in an exact "
+            "allowlisted worn test HUD."
         ),
         version=__version__,
         **kwargs,
@@ -98,6 +99,24 @@ def create_mcp_server(
         """List objects and HUD roots currently attached to the logged-in avatar."""
 
         return service.list_attachments()
+
+    @mcp.tool(structured_output=True)
+    def viewer_context() -> dict[str, Any]:
+        """Report the non-secret avatar, grid, region, and per-viewer session identity."""
+
+        return service.viewer_context()
+
+    @mcp.tool(structured_output=True)
+    def inspect_selected_target() -> dict[str, Any]:
+        """Inspect one selected linkset and issue a handle only for a safe self-owned target."""
+
+        return service.inspect_selected_target()
+
+    @mcp.tool(structured_output=True)
+    def revalidate_selected_target(target_handle: str) -> dict[str, Any]:
+        """Verify that a selected target still exactly matches an unexpired handle."""
+
+        return service.revalidate_selected_target(target_handle)
 
     @mcp.tool(structured_output=True)
     def touch_test_hud(

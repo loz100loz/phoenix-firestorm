@@ -28,6 +28,8 @@ public:
     LLScriptAutomationListener();
 
 private:
+    void getViewerContext(const LLSD& request) const;
+    void inspectSelection(const LLSD& request) const;
     void getTaskInventory(const LLSD& request) const;
     void getScriptSource(const LLSD& request) const;
     void updateScriptSource(const LLSD& request) const;

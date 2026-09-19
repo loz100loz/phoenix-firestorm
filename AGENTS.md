@@ -75,6 +75,19 @@ later inverse edit can remove the complete inserted fragment when required.
 This approval remains limited to the disposable test HUD; it does not authorize
 arbitrary HUDs, rezzed objects, bulk writes, or source deletion.
 
+## Approved read-only target identity foundation
+
+The user approved a read-only selected-object identity layer as the safety
+foundation for later world-object work. It may expose viewer/avatar/grid/region
+context, inspect exactly one selected linkset or linked prim, list script
+inventory only after strict self-owner and modify checks, issue a short-lived
+in-memory handle bound to that viewer/avatar session, and revalidate that handle.
+It must not mutate, touch, move, create, rez, attach, answer dialogs, or accept a
+caller-supplied object UUID. Names are display labels only. Group-owned and
+other-avatar-owned targets receive no handle. A changed viewer, avatar, region,
+selection, linkset, permission set, object metadata, or script inventory must
+invalidate the handle before any later operation can use it.
+
 The intended next product workflow is project-folder synchronization: local
 `.lsl` files organized by game device in VS Code should be the source of truth,
 with explicit manifest mappings to Firestorm task scripts. Implement this in
@@ -86,6 +99,33 @@ Use `tools/firestorm_mcp_bridge/examples/fake_lsl_game` for workspace manifest
 and save-watcher development until the user explicitly supplies a real project
 root. Never scan for or guess the user's game workspace. Fake workspace targets
 must remain deliberately nonexistent and must not trigger live viewer writes.
+
+Before adding world-object, dialog, movement, creation, rez, attach, or broader
+control tools, read and follow
+`doc/firestorm_mcp/TARGET_IDENTITY_SECURITY.md`. Object names are discovery
+labels, not unique identity or write authority. Mutations must bind to the
+current viewer/avatar session, default to strict self-ownership, use a
+short-lived inspected target, revalidate immediately before apply, and fail
+closed on duplicates, incomplete properties, owner mismatch, changed selection
+or stale state. Group-owned writes require separate explicit approval and an
+allowlisted policy.
+
+LSL fixtures and generated LSL must use syntax supported by Second Life. LSL
+does not provide the C-style ternary `condition ? a : b`; use `if`/`else`.
+Treat any future Second Life Lua language as a separately discovered source
+language rather than conflating it with the current Mono/LSO runtime target.
+
+Security-boundary testing is allowed and expected when it is hypothesis-driven,
+minimally invasive, and scoped to user-controlled accounts, objects, scripts,
+inventory and land or another environment with explicit authorization. Test
+expected denials such as wrong owner, restricted permissions, duplicate names,
+stale handles, cross-viewer sessions and invalid/replayed credentials. Public
+source and protocol review are also allowed. Never use a discovered bypass as a
+product feature or broaden testing into third-party objects or data. If an
+operation unexpectedly succeeds where normal permissions should deny it, stop
+the affected path and follow the responsible-disclosure procedure in
+`doc/firestorm_mcp/TARGET_IDENTITY_SECURITY.md`. Do not publicize it or send a
+report without the user's review and approval.
 
 Remote access is intended to use tailnet-only Tailscale Serve in front of the
 existing loopback listener. Do not bind MCP to all interfaces and do not use
