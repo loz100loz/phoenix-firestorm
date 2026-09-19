@@ -116,6 +116,32 @@ before every operation.
 Stages 3 and later require a separate live safety proof before production game
 objects are allowed.
 
+## Live read-only push-preview proof
+
+On 2026-09-19, `preview_workspace_push` passed its first live proof against the
+disposable worn `MCP POC ROOT`; no production workspace or object was used.
+
+1. An isolated workspace under `%LOCALAPPDATA%\FirestormMCP` was populated from
+   an existing verified runtime backup whose canonical hash exactly matched the
+   sole live script.
+2. The bridge launched with that workspace as a named allowlisted root and
+   issued a handle only after the exact selected attachment passed self-owner,
+   modify, script-count, copy and modify checks.
+3. `workspace_status` reported `unchanged` and established the session baseline.
+4. A harmless comment was appended only to the isolated local `.lsl` file;
+   `workspace_status` then reported `local_ahead`.
+5. `preview_workspace_push` created its 30-minute JSON plan and unified diff
+   outside Git. The diff hash verified and the diff contained the local-only
+   marker.
+6. A final status call remained `local_ahead`; the live remote hash still
+   matched the baseline, `source_returned` was false, and `writes_performed` was
+   false.
+7. The MCP tool inventory confirmed that `apply_workspace_push` was not exposed.
+
+This proves selection binding, baseline classification, revalidation and plan
+generation on a live permitted target. It is not an upload/compile proof and is
+not approval to expose apply or use production objects.
+
 ## Synthetic workspace
 
 `tools/firestorm_mcp_bridge/examples/fake_lsl_game` contains three deliberately

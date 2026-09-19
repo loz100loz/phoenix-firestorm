@@ -29,10 +29,11 @@ launch-allowlisted workspace mapping to a revalidated selected target and
 reports hash-only sync state. `preview_workspace_push` now creates a 30-minute
 outside-Git plan and reviewable local-to-world diff only when that status is
 verified `local_ahead`; it re-reads and revalidates without uploading or
-altering either side. Both tools are automated-tested against synthetic
-fixtures; the deliberately nonexistent example targets prevent an accidental
-live match. Apply remains unavailable. Private Tailscale transport is designed
-but not configured.
+altering either side. Both tools are automated-tested, and the preview passed a
+live read-only proof on 2026-09-19 against the disposable `MCP POC ROOT` and an
+isolated outside-Git runtime workspace. The repository example targets remain
+deliberately nonexistent so they cannot accidentally match live content. Apply
+remains unavailable. Private Tailscale transport is designed but not configured.
 
 The approved read-only target-identity foundation is also implemented and
 automated-tested. It reports per-viewer avatar/grid/region context, inspects one
@@ -110,7 +111,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
 | Stage 1 | Implemented, build-tested, and live-tested | Viewer/avatar context, selected-linkset inspection, strict self-owner gate, permission/script summary, expiring handle and stale/cross-viewer rejection; no world-object writes |
 | Stage 2 | Proof, three-color edit, and reusable test-HUD editor live-passed | Exact test-HUD task inventory, permitted retrieval, reversible proof, fixed color edit, and bounded preview/apply transactions; no other objects |
-| Workspace status and push preview | Implemented and automated-tested; fake live target intentionally unavailable | Named workspace allowlist, manifest mapping, selected-target revalidation, exact script resolution, hash-only comparison, session baseline, and outside-Git diff/plan; no viewer or workspace writes |
+| Workspace status and push preview | Implemented, automated-tested, and live-tested against the disposable test HUD | Named workspace allowlist, manifest mapping, selected-target revalidation, exact script resolution, hash-only comparison, session baseline, and outside-Git diff/plan; no viewer or workspace writes |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |
 

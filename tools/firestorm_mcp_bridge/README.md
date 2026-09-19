@@ -54,6 +54,12 @@ the diff path—never source or runtime object/item UUIDs. It does not upload,
 compile, create a recovery backup, or modify the workspace. There is no
 `apply_workspace_push` tool yet.
 
+The first live read-only proof passed on 2026-09-19 against the disposable
+`MCP POC ROOT` using an isolated runtime workspace. It established an equal
+baseline, classified a local-only comment as `local_ahead`, created and verified
+the outside-Git diff/plan, and confirmed afterward that the remote source still
+matched the baseline. No source was returned and no viewer write occurred.
+
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
 `capture_viewer` hides the viewer UI and shows HUDs by default. Screenshots stay in the current user's local application-data directory and are returned as MCP image content.

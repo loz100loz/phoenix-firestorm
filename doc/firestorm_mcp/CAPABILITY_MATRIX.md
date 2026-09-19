@@ -83,7 +83,7 @@ presence is not permission for general object writes.
 | Changed-selection rejection | Implemented, automated-tested, and live-tested |
 | Expired and cross-viewer handle rejection | Implemented and automated-tested; controlled multi-viewer live proof remains future work |
 | Hash-only `workspace_status` comparison | Implemented and automated-tested; fake example names intentionally have no live target |
-| Outside-Git `preview_workspace_push` plan/diff | Implemented and automated-tested; one script, verified `local_ahead`, no upload |
+| Outside-Git `preview_workspace_push` plan/diff | Implemented, automated-tested, and live-tested against the disposable test HUD; one script, verified `local_ahead`, no upload |
 | Push a saved file into Firestorm | Not wired yet |
 | Remote Tailscale endpoint and pairing | Designed, not configured |
 
