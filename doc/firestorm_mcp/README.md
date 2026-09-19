@@ -33,7 +33,10 @@ altering either side. Both tools are automated-tested, and the preview passed a
 live read-only proof on 2026-09-19 against the disposable `MCP POC ROOT` and an
 isolated outside-Git runtime workspace. The repository example targets remain
 deliberately nonexistent so they cannot accidentally match live content. Apply
-remains unavailable. Private Tailscale transport is designed but not configured.
+is now implemented for one mapped script and automated-tested with exact
+outside-Git backup, stale/integrity gates, compiler diagnostics, exact read-back
+and automatic rollback; its disposable-HUD live proof is pending. Private
+Tailscale transport is designed but not configured.
 
 The approved read-only target-identity foundation is also implemented and
 automated-tested. It reports per-viewer avatar/grid/region context, inspects one
@@ -68,7 +71,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Path | Responsibility |
 | --- | --- |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/leap.py` | Length-prefixed LLSD LEAP transport, request correlation, and API discovery |
-| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy, guarded test-HUD transactions, session-bound target identity, hash-only workspace comparison, and read-only push planning |
+| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy, guarded test-HUD transactions, session-bound target identity, workspace comparison/planning, and single-script apply/rollback |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/server.py` | Authenticated localhost MCP server, tools, launch config, and session descriptor |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/workspace.py` | Manifest validation, path containment, source validation, and debounced local-save detection |
 | `tools/firestorm_mcp_bridge/launch_installed_firestorm.ps1` | Safe installed-viewer launch, side-by-side channel selection, multi-login isolation, and Firestorm-version argument compatibility |
@@ -91,8 +94,10 @@ must not be implemented until the user explicitly approves a new stage.
 - Workspace tools can access only roots named at bridge launch. `workspace_status`
   returns canonical hashes and mapping/status metadata. `preview_workspace_push`
   additionally writes a short-lived plan and unified diff outside Git only for
-  verified `local_ahead` state. Neither returns source or changes Firestorm or
-  the workspace; apply is not exposed.
+  verified `local_ahead` state. Neither returns source. A confirmed
+  `apply_workspace_push` revalidates that plan, makes an exact outside-Git
+  backup, uploads/compiles/read-verifies one script and restores the original on
+  failure. It never writes the local workspace.
 - Runtime session descriptors and screenshots stay under
   `%LOCALAPPDATA%\FirestormMCP` and must not be committed.
 - Multi-login viewers receive separate ports, session descriptors, and capture
@@ -111,7 +116,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
 | Stage 1 | Implemented, build-tested, and live-tested | Viewer/avatar context, selected-linkset inspection, strict self-owner gate, permission/script summary, expiring handle and stale/cross-viewer rejection; no world-object writes |
 | Stage 2 | Proof, three-color edit, and reusable test-HUD editor live-passed | Exact test-HUD task inventory, permitted retrieval, reversible proof, fixed color edit, and bounded preview/apply transactions; no other objects |
-| Workspace status and push preview | Implemented, automated-tested, and live-tested against the disposable test HUD | Named workspace allowlist, manifest mapping, selected-target revalidation, exact script resolution, hash-only comparison, session baseline, and outside-Git diff/plan; no viewer or workspace writes |
+| Single-script workspace push | Status/preview live-tested; apply implemented and automated-tested, with live proof pending | Named workspace allowlist, session baseline, exact target/script revalidation, outside-Git plan/backup, compile diagnostics, exact read-back and rollback; no local workspace writes |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |
 

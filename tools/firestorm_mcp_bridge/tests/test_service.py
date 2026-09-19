@@ -8,7 +8,11 @@ from typing import Any
 import pytest
 
 from firestorm_mcp_bridge.leap import LeapError
-from firestorm_mcp_bridge.service import EDIT_CONFIRMATION, Stage0Service
+from firestorm_mcp_bridge.service import (
+    EDIT_CONFIRMATION,
+    WORKSPACE_APPLY_CONFIRMATION,
+    Stage0Service,
+)
 
 PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -174,7 +178,7 @@ class FakeLeap:
                 "installed": compiled,
                 "running": True,
                 "target": "mono",
-                "errors": [],
+                "errors": [] if compiled else ["synthetic compile error"],
             }
         raise AssertionError((pump, data))
 
@@ -831,6 +835,269 @@ def test_preview_workspace_push_rejects_plan_directory_inside_git(tmp_path):
 
     assert not service.workspace_push_plan_dir.exists()
     assert service.leap.script_updates == []
+
+
+def create_workspace_push_plan(
+    service: Stage0Service,
+    source: Path,
+) -> tuple[str, dict[str, Any], str, str]:
+    handle, local_source, remote_source = establish_local_ahead(service, source)
+    preview = service.preview_workspace_push(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+    return handle, preview, local_source, remote_source
+
+
+def test_apply_workspace_push_backs_up_compiles_verifies_and_consumes_plan(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    handle, preview, local_source, remote_source = create_workspace_push_plan(
+        service, source
+    )
+
+    result = service.apply_workspace_push(
+        preview["plan_id"],
+        WORKSPACE_APPLY_CONFIRMATION,
+    )
+
+    assert result["applied"] is True
+    assert result["restored"] is False
+    assert result["compiled"] is True
+    assert result["source_verified"] is True
+    assert result["runtime_state_preserved"] is True
+    assert result["plan_consumed"] is True
+    assert result["writes_performed"] is True
+    assert result["source_returned"] is False
+    assert result["diagnostics"] == {
+        "relative_path": "devices/fixture/controller.lsl",
+        "errors": [],
+    }
+    assert service.leap.script_source == local_source.replace("\n", "\r\n")
+    assert service.leap.script_updates == [service.leap.script_source]
+    with Path(result["backup_path"]).open("r", encoding="utf-8", newline="") as stream:
+        assert stream.read() == remote_source
+    assert Path(result["backup_path"]).name.startswith("workspace-script-")
+    assert not Path(preview["diff_path"]).exists()
+    assert not Path(preview["diff_path"]).with_suffix(".json").exists()
+    status = service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+    assert status["status"] == "unchanged"
+    serialized = json.dumps(result, sort_keys=True)
+    assert local_source not in serialized
+    assert remote_source not in serialized
+    assert "33333333-3333-3333-3333-333333333333" not in serialized
+    assert "44444444-4444-4444-4444-444444444444" not in serialized
+
+
+def test_apply_workspace_push_requires_exact_confirmation(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, _ = create_workspace_push_plan(service, source)
+
+    with pytest.raises(LeapError, match="confirmation must exactly equal"):
+        service.apply_workspace_push(preview["plan_id"], "yes")
+
+    assert Path(preview["diff_path"]).is_file()
+    assert service.leap.script_updates == []
+
+
+@pytest.mark.parametrize("changed_side", ["local", "remote"])
+def test_apply_workspace_push_rejects_stale_source(tmp_path, changed_side):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, _ = create_workspace_push_plan(service, source)
+    if changed_side == "local":
+        source.write_text(
+            'default { state_entry() { llOwnerSay("newer local"); } }\n',
+            encoding="utf-8",
+        )
+    else:
+        service.leap.script_source = (
+            'default { state_entry() { llOwnerSay("newer remote"); } }\n'
+        )
+
+    with pytest.raises(LeapError, match="stale plan was not applied"):
+        service.apply_workspace_push(
+            preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+
+    assert not Path(preview["diff_path"]).exists()
+    assert service.leap.script_updates == []
+
+
+@pytest.mark.parametrize("changed_target", ["name", "permission", "duplicate"])
+def test_apply_workspace_push_rejects_changed_target(tmp_path, changed_target):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, _ = create_workspace_push_plan(service, source)
+    if changed_target == "name":
+        service.leap.selected_name = "Changed Device"
+    elif changed_target == "permission":
+        service.leap.script_can_modify = False
+    else:
+        service.leap.duplicate_script_name = True
+        service.leap.duplicate_script_item_id = True
+
+    with pytest.raises(LeapError):
+        service.apply_workspace_push(
+            preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+
+    assert not Path(preview["diff_path"]).exists()
+    assert service.leap.script_updates == []
+
+
+def test_apply_workspace_push_rejects_expired_and_cross_viewer_plan(tmp_path):
+    expired, expired_source = make_workspace_service(tmp_path / "expired")
+    _, expired_preview, _, _ = create_workspace_push_plan(expired, expired_source)
+    expired_plan_path = Path(expired_preview["diff_path"]).with_suffix(".json")
+    expired_plan = json.loads(expired_plan_path.read_text(encoding="utf-8"))
+    expired_plan["expires_at"] = "2000-01-01T00:00:00+00:00"
+    expired_plan_path.write_text(json.dumps(expired_plan), encoding="utf-8")
+
+    with pytest.raises(LeapError, match="plan has expired"):
+        expired.apply_workspace_push(
+            expired_preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+    assert not expired_plan_path.exists()
+
+    first, first_source = make_workspace_service(tmp_path / "first")
+    _, first_preview, _, _ = create_workspace_push_plan(first, first_source)
+    second, _ = make_workspace_service(tmp_path / "second")
+    second.workspace_push_plan_dir = first.workspace_push_plan_dir
+    with pytest.raises(LeapError, match="different viewer session"):
+        second.apply_workspace_push(
+            first_preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+    assert Path(first_preview["diff_path"]).is_file()
+    assert second.leap.script_updates == []
+
+
+def test_apply_workspace_push_rejects_tampered_diff(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, _ = create_workspace_push_plan(service, source)
+    Path(preview["diff_path"]).write_text("tampered\n", encoding="utf-8")
+
+    with pytest.raises(LeapError, match="failed its integrity check"):
+        service.apply_workspace_push(
+            preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+
+    assert service.leap.script_updates == []
+    assert not Path(preview["diff_path"]).exists()
+
+
+def test_apply_workspace_push_rejects_backup_directory_inside_git(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, _ = create_workspace_push_plan(service, source)
+    unsafe = tmp_path / "unsafe-backup-repo"
+    (unsafe / ".git").mkdir(parents=True)
+    service.script_backup_dir = unsafe / "backups"
+
+    with pytest.raises(LeapError, match="outside a Git working tree"):
+        service.apply_workspace_push(
+            preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+
+    assert Path(preview["diff_path"]).is_file()
+    assert service.leap.script_updates == []
+
+
+def test_apply_workspace_push_rechecks_after_backup_before_upload(
+    tmp_path, monkeypatch
+):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, _ = create_workspace_push_plan(service, source)
+    original_backup = service._write_script_backup
+
+    def backup_then_change(source_text, *, prefix="hud-script"):
+        path = original_backup(source_text, prefix=prefix)
+        service.leap.script_source += "// changed during backup\n"
+        return path
+
+    monkeypatch.setattr(service, "_write_script_backup", backup_then_change)
+    with pytest.raises(LeapError, match="changed after backup"):
+        service.apply_workspace_push(
+            preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+    assert service.leap.script_updates == []
+
+
+def test_apply_workspace_push_restores_and_returns_compile_diagnostics(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, remote_source = create_workspace_push_plan(service, source)
+    service.leap.fail_next_compile = True
+
+    result = service.apply_workspace_push(
+        preview["plan_id"],
+        WORKSPACE_APPLY_CONFIRMATION,
+    )
+
+    assert result["applied"] is False
+    assert result["restored"] is True
+    assert result["failure_stage"] == "compile"
+    assert result["diagnostics"] == {
+        "relative_path": "devices/fixture/controller.lsl",
+        "errors": ["synthetic compile error"],
+    }
+    assert service.leap.script_source == remote_source
+    assert len(service.leap.script_updates) == 2
+    assert service.leap.script_updates[-1] == remote_source
+    assert not Path(preview["diff_path"]).exists()
+
+
+def test_apply_workspace_push_restores_after_readback_failure(tmp_path, monkeypatch):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, remote_source = create_workspace_push_plan(service, source)
+    original_wait = service._wait_for_script_source
+    calls = 0
+
+    def fail_first_readback(object_id, item_id, expected):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise LeapError("synthetic read-back mismatch")
+        return original_wait(object_id, item_id, expected)
+
+    monkeypatch.setattr(service, "_wait_for_script_source", fail_first_readback)
+    result = service.apply_workspace_push(
+        preview["plan_id"],
+        WORKSPACE_APPLY_CONFIRMATION,
+    )
+
+    assert result["applied"] is False
+    assert result["restored"] is True
+    assert result["failure_stage"] == "read_back"
+    assert service.leap.script_source == remote_source
+    assert len(service.leap.script_updates) == 2
+
+
+def test_apply_workspace_push_retains_plan_when_restore_fails(tmp_path, monkeypatch):
+    service, source = make_workspace_service(tmp_path)
+    _, preview, _, _ = create_workspace_push_plan(service, source)
+    updates = 0
+
+    def fail_apply_and_restore(object_id, item_id, source_text):
+        nonlocal updates
+        updates += 1
+        if updates == 1:
+            service.leap.script_source = source_text
+            return {"compiled": False, "errors": ["synthetic compile error"]}
+        raise LeapError("synthetic restore failure")
+
+    monkeypatch.setattr(service, "_update_script_source", fail_apply_and_restore)
+    with pytest.raises(LeapError, match="could not be fully restored"):
+        service.apply_workspace_push(
+            preview["plan_id"],
+            WORKSPACE_APPLY_CONFIRMATION,
+        )
+
+    assert Path(preview["diff_path"]).is_file()
+    assert list(service.script_backup_dir.glob("workspace-script-*.lsl"))
 
 
 def test_touch_is_limited_to_worn_allowlisted_attachment(service):

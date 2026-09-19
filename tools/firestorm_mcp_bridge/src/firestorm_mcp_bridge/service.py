@@ -23,6 +23,7 @@ MAX_SCRIPT_SOURCE_BYTES = 64 * 1024
 MAX_PATCH_FRAGMENT_BYTES = 16 * 1024
 EDIT_PLAN_TTL = timedelta(minutes=30)
 EDIT_CONFIRMATION = "APPLY MCP POC ROOT"
+WORKSPACE_APPLY_CONFIRMATION = "APPLY WORKSPACE PUSH"
 TARGET_HANDLE_TTL_SECONDS = 10 * 60.0
 
 
@@ -467,7 +468,286 @@ class Stage0Service:
                 "remote": remote,
                 "diff_path": str(diff_path),
                 "diff": diff_summary,
+                "confirmation_required": WORKSPACE_APPLY_CONFIRMATION,
                 "writes_performed": False,
+                "source_returned": False,
+            }
+
+    def apply_workspace_push(
+        self,
+        plan_id: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        """Apply one workspace plan with backup, verification, and rollback."""
+
+        if confirmation != WORKSPACE_APPLY_CONFIRMATION:
+            raise LeapError(
+                f"confirmation must exactly equal {WORKSPACE_APPLY_CONFIRMATION!r}"
+            )
+        if not re.fullmatch(r"[0-9a-f]{32}", plan_id):
+            raise LeapError("plan_id is invalid")
+
+        with self._workspace_push_lock:
+            plan_path = self.workspace_push_plan_dir / f"{plan_id}.json"
+            diff_path = self.workspace_push_plan_dir / f"{plan_id}.diff"
+            if not plan_path.is_file() or not diff_path.is_file():
+                raise LeapError(
+                    "The workspace push plan does not exist or has already been consumed"
+                )
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise LeapError("The workspace push plan could not be read safely") from exc
+            if (
+                not isinstance(plan, dict)
+                or plan.get("version") != 1
+                or plan.get("kind") != "workspace_push"
+                or plan.get("plan_id") != plan_id
+            ):
+                raise LeapError("The workspace push plan is invalid")
+            try:
+                expires = datetime.fromisoformat(str(plan["expires_at"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise LeapError("The workspace push plan expiry is invalid") from exc
+            if expires.tzinfo is None:
+                raise LeapError("The workspace push plan expiry must include a timezone")
+            if datetime.now(UTC) >= expires:
+                self._remove_workspace_push_plan(plan_id)
+                raise LeapError(
+                    "The workspace push plan has expired; create a fresh preview"
+                )
+            if plan.get("session_fingerprint") != self.session_fingerprint:
+                raise LeapError(
+                    "The workspace push plan belongs to a different viewer session"
+                )
+
+            workspace_key = plan.get("workspace_key")
+            device_key = plan.get("device_key")
+            script_key = plan.get("script_key")
+            target_handle = plan.get("target_handle")
+            if not all(
+                isinstance(value, str) and value
+                for value in (workspace_key, device_key, script_key, target_handle)
+            ):
+                raise LeapError("The workspace push plan mapping is invalid")
+            root, device, script = self._resolve_workspace_mapping(
+                workspace_key,
+                device_key,
+                script_key,
+            )
+            expected_mapping = {
+                "relative_path": script.relative_path,
+                "target_kind": device.target_kind,
+                "target_name": device.target_name,
+                "task_script_name": script.task_script_name,
+            }
+            if any(plan.get(key) != value for key, value in expected_mapping.items()):
+                self._remove_workspace_push_plan(plan_id)
+                raise LeapError("The workspace mapping changed after preview")
+
+            try:
+                raw, scripts, identity_sha256, _ = self._revalidate_target_handle(
+                    target_handle
+                )
+                if identity_sha256 != plan.get("target_identity_sha256"):
+                    raise LeapError("The selected target identity changed after preview")
+                selected_name = str(
+                    raw.get("root_name") or raw.get("object_name") or ""
+                )
+                if bool(raw.get("is_attachment")) != (
+                    device.target_kind == "worn_attachment"
+                ):
+                    raise LeapError("The selected target kind changed after preview")
+                if selected_name != device.target_name:
+                    raise LeapError("The selected target name changed after preview")
+                matches = [
+                    item
+                    for item in scripts
+                    if str(item.get("name", "")) == script.task_script_name
+                ]
+                if len(matches) != 1:
+                    raise LeapError(
+                        "The mapped task script is missing or ambiguous after preview"
+                    )
+                item = matches[0]
+                if not bool(item.get("can_copy")) or not bool(item.get("can_modify")):
+                    raise LeapError(
+                        "The mapped task script is no longer copyable and modifiable"
+                    )
+                object_id = self._validated_uuid(
+                    raw.get("object_id"), "selected object"
+                )
+                item_id = self._validated_uuid(item.get("item_id"), "script item")
+                if object_id != plan.get("object_id") or item_id != plan.get("item_id"):
+                    raise LeapError("The mapped object or script identity changed after preview")
+            except Exception:
+                self._remove_workspace_push_plan(plan_id)
+                raise
+
+            local_source = self._read_workspace_source(script.path, root)
+            remote_source = self._get_script_source(object_id, item_id)
+            _, _, verified_identity_sha256, _ = self._revalidate_target_handle(
+                target_handle
+            )
+            local = self._source_summary(local_source)
+            remote = self._source_summary(remote_source)
+            baseline_sha256 = plan.get("baseline_sha256")
+            baseline_key = (
+                workspace_key,
+                device.key,
+                script.script_key,
+                identity_sha256,
+            )
+            with self._workspace_baseline_lock:
+                current_baseline = self._workspace_baselines.get(baseline_key)
+            if (
+                verified_identity_sha256 != identity_sha256
+                or local != plan.get("local")
+                or remote != plan.get("remote")
+                or not isinstance(baseline_sha256, str)
+                or current_baseline != baseline_sha256
+                or remote["sha256"] != baseline_sha256
+                or local["sha256"] == baseline_sha256
+            ):
+                self._remove_workspace_push_plan(plan_id)
+                raise LeapError(
+                    "The workspace, live script, target, or verified baseline changed; "
+                    "the stale plan was not applied"
+                )
+
+            diff, diff_summary = self._build_workspace_diff(
+                plan,
+                remote_source=remote_source,
+                local_source=local_source,
+            )
+            try:
+                persisted_diff = diff_path.read_bytes()
+            except OSError as exc:
+                raise LeapError("The workspace push diff could not be read safely") from exc
+            if (
+                plan.get("diff") != diff_summary
+                or persisted_diff != diff.encode("utf-8")
+            ):
+                self._remove_workspace_push_plan(plan_id)
+                raise LeapError("The workspace push plan or diff failed its integrity check")
+
+            latest_local = self._read_workspace_source(script.path, root)
+            latest_remote = self._get_script_source(object_id, item_id)
+            _, _, final_identity_sha256, _ = self._revalidate_target_handle(
+                target_handle
+            )
+            if (
+                latest_local != local_source
+                or latest_remote != remote_source
+                or final_identity_sha256 != identity_sha256
+            ):
+                self._remove_workspace_push_plan(plan_id)
+                raise LeapError(
+                    "The workspace or live script changed immediately before upload; "
+                    "the stale plan was not applied"
+                )
+
+            backup_path = self._write_script_backup(
+                remote_source,
+                prefix="workspace-script",
+            )
+            immediate_local = self._read_workspace_source(script.path, root)
+            immediate_remote = self._get_script_source(object_id, item_id)
+            _, _, immediate_identity_sha256, _ = self._revalidate_target_handle(
+                target_handle
+            )
+            if (
+                immediate_local != local_source
+                or immediate_remote != remote_source
+                or immediate_identity_sha256 != identity_sha256
+            ):
+                self._remove_workspace_push_plan(plan_id)
+                raise LeapError(
+                    "The workspace, live script, or selected target changed after "
+                    "backup; the stale plan was not applied"
+                )
+            primary_error: Exception | None = None
+            failure_stage = "upload"
+            update_result: dict[str, Any] | None = None
+            try:
+                update_result = self._update_script_source(
+                    object_id,
+                    item_id,
+                    local_source,
+                )
+                failure_stage = "compile"
+                if not update_result.get("compiled"):
+                    raise LeapError("Firestorm reported that the workspace script did not compile")
+                failure_stage = "read_back"
+                self._wait_for_script_source(object_id, item_id, local_source)
+            except Exception as exc:
+                primary_error = exc
+
+            diagnostics = self._compile_diagnostics(update_result, script.relative_path)
+            if primary_error is not None:
+                try:
+                    restore_result = self._update_script_source(
+                        object_id,
+                        item_id,
+                        remote_source,
+                    )
+                    if not restore_result.get("compiled"):
+                        raise LeapError(
+                            "Firestorm reported that the original workspace script "
+                            "did not recompile"
+                        )
+                    self._wait_for_script_source(object_id, item_id, remote_source)
+                except Exception as restore_error:
+                    raise LeapError(
+                        "The workspace push failed and the original could not be fully "
+                        f"restored. The exact local backup is at {backup_path}. "
+                        f"Restore error: {restore_error}. Apply error: {primary_error}"
+                    ) from restore_error
+                self._remove_workspace_push_plan(plan_id)
+                return {
+                    "applied": False,
+                    "restored": True,
+                    "failure_stage": failure_stage,
+                    "error": str(primary_error),
+                    "plan_id": plan_id,
+                    "workspace_key": workspace_key,
+                    "device_key": device.key,
+                    "script_key": script.script_key,
+                    "relative_path": script.relative_path,
+                    "selected_target_name": selected_name,
+                    "task_script_name": script.task_script_name,
+                    "backup_path": str(backup_path),
+                    "diagnostics": diagnostics,
+                    "compiled": False,
+                    "source_verified": False,
+                    "runtime_state_preserved": True,
+                    "plan_consumed": True,
+                    "writes_performed": True,
+                    "source_returned": False,
+                }
+
+            with self._workspace_baseline_lock:
+                self._workspace_baselines[baseline_key] = local["sha256"]
+            self._remove_workspace_push_plan(plan_id)
+            return {
+                "applied": True,
+                "restored": False,
+                "plan_id": plan_id,
+                "workspace_key": workspace_key,
+                "device_key": device.key,
+                "script_key": script.script_key,
+                "relative_path": script.relative_path,
+                "selected_target_name": selected_name,
+                "task_script_name": script.task_script_name,
+                "backup_path": str(backup_path),
+                "previous": remote,
+                "applied_source": local,
+                "diagnostics": diagnostics,
+                "compiled": True,
+                "source_verified": True,
+                "runtime_state_preserved": True,
+                "plan_consumed": True,
+                "writes_performed": True,
                 "source_returned": False,
             }
 
@@ -1432,13 +1712,15 @@ class Stage0Service:
             raise LeapError("The generated script did not contain exactly three color operations")
         return candidate
 
-    def _write_script_backup(self, source: str) -> Path:
+    def _write_script_backup(self, source: str, *, prefix: str = "hud-script") -> Path:
+        if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", prefix):
+            raise LeapError("The script backup prefix is invalid")
         for parent in (self.script_backup_dir, *self.script_backup_dir.parents):
             if (parent / ".git").exists():
                 raise LeapError("Script backups must be stored outside a Git working tree")
         self.script_backup_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-        path = self.script_backup_dir / f"hud-script-{stamp}-{uuid.uuid4().hex[:8]}.lsl"
+        path = self.script_backup_dir / f"{prefix}-{stamp}-{uuid.uuid4().hex[:8]}.lsl"
         with path.open("x", encoding="utf-8", newline="") as stream:
             stream.write(source)
             stream.flush()
@@ -1516,20 +1798,12 @@ class Stage0Service:
         plan_id = str(plan["plan_id"])
         plan_path = self.workspace_push_plan_dir / f"{plan_id}.json"
         diff_path = self.workspace_push_plan_dir / f"{plan_id}.diff"
-        diff = "".join(
-            unified_diff(
-                remote_source.splitlines(keepends=True),
-                local_source.splitlines(keepends=True),
-                fromfile=f"in-world/{plan['task_script_name']}",
-                tofile=f"workspace/{plan['relative_path']}",
-            )
+        diff, diff_summary = self._build_workspace_diff(
+            plan,
+            remote_source=remote_source,
+            local_source=local_source,
         )
         diff_data = diff.encode("utf-8")
-        diff_summary = {
-            "sha256": hashlib.sha256(diff_data).hexdigest(),
-            "bytes": len(diff_data),
-            "format": "unified",
-        }
         persisted_plan = {**plan, "diff": diff_summary}
         serialized = json.dumps(persisted_plan, ensure_ascii=False, sort_keys=True)
         try:
@@ -1548,6 +1822,45 @@ class Stage0Service:
             diff_path.unlink(missing_ok=True)
             raise
         return plan_path, diff_path, diff_summary
+
+    @staticmethod
+    def _build_workspace_diff(
+        plan: dict[str, Any],
+        *,
+        remote_source: str,
+        local_source: str,
+    ) -> tuple[str, dict[str, Any]]:
+        diff = "".join(
+            unified_diff(
+                remote_source.splitlines(keepends=True),
+                local_source.splitlines(keepends=True),
+                fromfile=f"in-world/{plan['task_script_name']}",
+                tofile=f"workspace/{plan['relative_path']}",
+            )
+        )
+        diff_data = diff.encode("utf-8")
+        return diff, {
+            "sha256": hashlib.sha256(diff_data).hexdigest(),
+            "bytes": len(diff_data),
+            "format": "unified",
+        }
+
+    @staticmethod
+    def _compile_diagnostics(
+        update_result: dict[str, Any] | None,
+        relative_path: str,
+    ) -> dict[str, Any]:
+        errors: list[str] = []
+        if update_result is not None:
+            raw_errors = update_result.get("errors", [])
+            if isinstance(raw_errors, list):
+                errors = [str(item) for item in raw_errors]
+            elif raw_errors:
+                errors = [str(raw_errors)]
+        return {
+            "relative_path": relative_path,
+            "errors": errors,
+        }
 
     def _remove_workspace_push_plan(self, plan_id: str) -> None:
         (self.workspace_push_plan_dir / f"{plan_id}.json").unlink(missing_ok=True)

@@ -59,9 +59,11 @@ before every operation.
    without uploading. The implemented first slice requires verified
    `local_ahead` state, re-reads/revalidates before writing a 30-minute plan,
    and returns metadata plus the diff path without source.
-3. `apply_workspace_push` rechecks source hashes, creates recovery backups,
-   uploads in a deterministic order, returns compiler errors by local file, and
-   stops or rolls back according to the selected transaction policy.
+3. `apply_workspace_push` is implemented for one mapped script. It accepts only
+   a plan ID and exact confirmation, rechecks target/mapping/baseline/source/diff
+   integrity, writes an exact outside-Git backup, uploads and compiles, returns
+   compiler errors by local file, exact-read-verifies success, and restores the
+   original on failure.
 4. `preview_workspace_pull` and `apply_workspace_pull` safely bring permitted
    in-world changes back to local files without silently overwriting work.
 5. Runtime test helpers can touch an explicitly mapped test control, capture
@@ -102,9 +104,11 @@ before every operation.
    implemented and tested against a synthetic three-device/four-script
    workspace. Hash-only `workspace_status` is implemented with named launch
    allowlists, selected-target revalidation, exact script matching, permission
-   checks and source-withholding. Single-script `preview_workspace_push` is also
-   implemented and tested; it creates only an outside-Git plan/diff. Apply and
-   every Firestorm write remain pending separate approval.
+   checks and source-withholding. Single-script preview and apply are implemented
+   and automated-tested. Apply adds exact confirmation, post-backup revalidation,
+   an outside-Git recovery backup, compile diagnostics, exact read-back, baseline
+   advancement after success, and automatic restoration after failure. Its live
+   disposable-HUD proof remains pending; device-set writes remain a later stage.
 3. **Owned selected object:** explicit current-selection resolution for one
    rezzed disposable device, with the same permission and ambiguity gates.
 4. **Device sets:** multiple mapped scripts per device, deterministic compile

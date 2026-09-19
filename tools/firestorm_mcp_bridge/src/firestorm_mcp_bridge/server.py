@@ -75,9 +75,9 @@ def create_mcp_server(
         name="Firestorm MCP Proof of Concept",
         description=(
             "Proof-of-concept bridge for viewer discovery, read-only selected-target "
-            "identity, workspace comparison and push planning, worn test-HUD touch, "
-            "HUD-visible screenshots, and guarded write/compile/verify transactions "
-            "limited to the sole script in an exact allowlisted worn test HUD."
+            "identity, guarded workspace comparison/preview/apply, worn test-HUD "
+            "touch, HUD-visible screenshots, and permission-preserving "
+            "write/compile/verify/rollback transactions."
         ),
         version=__version__,
         **kwargs,
@@ -149,6 +149,18 @@ def create_mcp_server(
             device_key=device_key,
             script_key=script_key,
             target_handle=target_handle,
+        )
+
+    @mcp.tool(structured_output=True)
+    def apply_workspace_push(
+        plan_id: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        """Apply a confirmed workspace plan with backup, compile, verify, and rollback."""
+
+        return service.apply_workspace_push(
+            plan_id=plan_id,
+            confirmation=confirmation,
         )
 
     @mcp.tool(structured_output=True)

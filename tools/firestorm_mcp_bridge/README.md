@@ -19,6 +19,7 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `revalidate_selected_target`
 - `workspace_status`
 - `preview_workspace_push`
+- `apply_workspace_push`
 - `touch_test_hud`
 - `capture_viewer`
 - `list_test_hud_scripts`
@@ -51,8 +52,20 @@ checks that both hashes are unchanged, and writes a 30-minute JSON plan plus
 unified diff under `%LOCALAPPDATA%\FirestormMCP\workspace-push-plans` (or the
 corresponding runtime root in tests). Its response contains only metadata and
 the diff path—never source or runtime object/item UUIDs. It does not upload,
-compile, create a recovery backup, or modify the workspace. There is no
-`apply_workspace_push` tool yet.
+compile, create a recovery backup, or modify the workspace.
+
+`apply_workspace_push` accepts only a preview plan ID and the exact confirmation
+`APPLY WORKSPACE PUSH`. It rejects expired or cross-session plans and rechecks
+the manifest mapping, selected self-owned target identity, exact script and
+permissions, baseline, local/remote hashes and persisted diff before upload. It
+then writes and verifies an exact outside-Git remote-source backup, performs one
+final post-backup recheck, uploads while preserving runtime/VM/Experience state,
+requires compile success and exact source read-back, and advances the in-memory
+baseline. Compiler errors are returned with the relative local path. Any upload,
+compile or read-back failure triggers exact restore/recompile/read-back; a safe
+rollback consumes the plan, while a failed rollback retains recovery material.
+Responses never contain source or runtime object/item UUIDs, and apply never
+writes the local workspace.
 
 The first live read-only proof passed on 2026-09-19 against the disposable
 `MCP POC ROOT` using an isolated runtime workspace. It established an equal
@@ -187,10 +200,11 @@ Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. 
 - Touch is restricted to a currently worn, explicitly allowlisted attachment name.
 - Selected-object inspection is read-only; names never authorize a target, and
   only a strict self-owned, modifiable object can receive a session-bound handle.
-- Workspace comparison and push preview are limited to named launch-allowlisted
-  roots, manifest keys, a revalidated handle, and source-withholding results.
-  Preview writes only its expiring plan/diff outside Git; it cannot upload or
-  change the workspace, and no workspace apply tool is exposed.
+- Workspace status, preview and apply are limited to named launch-allowlisted
+  roots, manifest keys, a session-bound selected target and source-withholding
+  results. Preview writes its expiring plan/diff outside Git. Apply requires the
+  exact confirmation, backup and repeated revalidation; it can update only the
+  single script bound into that plan and cannot change the local workspace.
 - Screenshots hide viewer UI by default.
 - The reversible script mutation is limited to exactly one
   script in the exact allowlisted worn test HUD; caller-supplied source and IDs

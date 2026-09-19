@@ -116,7 +116,24 @@ hash. The resulting 30-minute plan and unified diff must live outside Git under
 runtime state. MCP responses may return plan/diff paths, hashes, sizes, names,
 and mapping metadata, but never source or runtime object/item UUIDs. Preview
 must not upload, compile, back up, or alter Firestorm or the workspace.
-`apply_workspace_push` remains unavailable until separately approved.
+
+The user subsequently approved the complete single-script
+`apply_workspace_push` stage, including a live install-and-exact-restore proof
+limited to `MCP POC ROOT` and an isolated runtime workspace. Apply may accept
+only a preview plan ID plus the exact `APPLY WORKSPACE PUSH` confirmation; it
+must not accept source, paths, object UUIDs, item UUIDs, workspace keys or a
+target handle directly. It must reject expired, cross-session, stale, changed,
+ambiguous, permission-denied or integrity-failed plans; re-read and revalidate
+the allowlisted mapping, selected strict-self-owned target, exact script,
+baseline, local source, remote source and diff immediately before upload; save
+and verify the exact remote source outside Git; preserve running state, Mono/LSO
+target and Experience association; require compile success and exact source
+read-back; return per-file compiler diagnostics; and restore/recompile/read-back
+the original automatically on failure. Safely consumed, stale and restored
+plans are removed. If restoration fails, retain the plan and backup and report
+the recovery path. This approval is one mapped script at a time and does not
+authorize production objects, device-set transactions, script creation/deletion
+or workspace pull.
 
 Use `tools/firestorm_mcp_bridge/examples/fake_lsl_game` for workspace manifest
 and save-watcher development until the user explicitly supplies a real project

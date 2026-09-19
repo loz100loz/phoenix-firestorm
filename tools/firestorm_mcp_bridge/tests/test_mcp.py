@@ -5,6 +5,7 @@ import asyncio
 from mcp import Client
 
 from firestorm_mcp_bridge.server import create_mcp_server
+from firestorm_mcp_bridge.service import WORKSPACE_APPLY_CONFIRMATION
 from test_service import make_workspace_service
 
 
@@ -24,6 +25,7 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
                 "revalidate_selected_target",
                 "workspace_status",
                 "preview_workspace_push",
+                "apply_workspace_push",
                 "touch_test_hud",
                 "list_test_hud_scripts",
                 "prove_test_hud_script_round_trip",
@@ -71,6 +73,17 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
             assert preview.structured_content["status"] == "local_ahead"
             assert preview.structured_content["writes_performed"] is False
             assert service.leap.script_updates == []
+
+            applied = await client.call_tool(
+                "apply_workspace_push",
+                {
+                    "plan_id": preview.structured_content["plan_id"],
+                    "confirmation": WORKSPACE_APPLY_CONFIRMATION,
+                },
+            )
+            assert applied.is_error is False
+            assert applied.structured_content["applied"] is True
+            assert applied.structured_content["source_verified"] is True
 
             screenshot = await client.call_tool(
                 "capture_viewer",

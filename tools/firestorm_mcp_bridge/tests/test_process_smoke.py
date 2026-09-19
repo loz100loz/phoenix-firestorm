@@ -171,6 +171,7 @@ def test_authenticated_http_bridge_end_to_end(tmp_path):
                         "revalidate_selected_target",
                         "workspace_status",
                         "preview_workspace_push",
+                        "apply_workspace_push",
                         "touch_test_hud",
                         "list_test_hud_scripts",
                         "prove_test_hud_script_round_trip",
