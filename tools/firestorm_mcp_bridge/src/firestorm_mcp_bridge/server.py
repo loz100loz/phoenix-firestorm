@@ -10,6 +10,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 from datetime import UTC, datetime
@@ -117,6 +118,22 @@ def create_mcp_server(
         """Verify that a selected target still exactly matches an unexpired handle."""
 
         return service.revalidate_selected_target(target_handle)
+
+    @mcp.tool(structured_output=True)
+    def workspace_status(
+        workspace_key: str,
+        device_key: str,
+        script_key: str,
+        target_handle: str,
+    ) -> dict[str, Any]:
+        """Compare one allowlisted local LSL mapping with a revalidated selected target."""
+
+        return service.workspace_status(
+            workspace_key=workspace_key,
+            device_key=device_key,
+            script_key=script_key,
+            target_handle=target_handle,
+        )
 
     @mcp.tool(structured_output=True)
     def touch_test_hud(
@@ -240,6 +257,7 @@ def decode_launch_config(value: str) -> dict[str, Any]:
         "capture_dir",
         "script_backup_dir",
         "allowed_attachment_names",
+        "workspace_roots",
     }
     unknown = sorted(set(config) - supported)
     if unknown:
@@ -270,9 +288,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Exact worn attachment name allowed for touch; may be repeated.",
     )
+    parser.add_argument(
+        "--workspace-root",
+        action="append",
+        dest="workspace_root_specs",
+        default=[],
+        metavar="KEY=PATH",
+        help="Allowlist a named workspace root; may be repeated.",
+    )
     parser.add_argument("--request-timeout", type=float, default=15.0)
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO")
     args = parser.parse_args(argv)
+    args.workspace_roots = {}
+    for spec in args.workspace_root_specs:
+        key, separator, value = spec.partition("=")
+        if not separator or not key.strip() or not value.strip():
+            parser.error("--workspace-root must use KEY=PATH")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", key):
+            parser.error(f"invalid workspace key: {key}")
+        if key in args.workspace_roots:
+            parser.error(f"duplicate workspace key: {key}")
+        args.workspace_roots[key] = Path(value)
+    del args.workspace_root_specs
     if args.launch_config:
         try:
             config = decode_launch_config(args.launch_config)
@@ -302,6 +339,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 ):
                     raise ValueError("allowed_attachment_names must be a non-empty list of non-empty strings")
                 args.allowed_attachment_names = names
+            if "workspace_roots" in config:
+                roots = config["workspace_roots"]
+                if (
+                    not isinstance(roots, dict)
+                    or not all(
+                        isinstance(key, str)
+                        and key.strip()
+                        and isinstance(value, str)
+                        and value.strip()
+                        for key, value in roots.items()
+                    )
+                ):
+                    raise ValueError("workspace_roots must map non-empty keys to non-empty paths")
+                for key, value in roots.items():
+                    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", key):
+                        raise ValueError(f"invalid workspace key: {key}")
+                    if key in args.workspace_roots:
+                        raise ValueError(f"duplicate workspace key: {key}")
+                    args.workspace_roots[key] = Path(value)
         except (TypeError, ValueError) as exc:
             parser.error(f"invalid --launch-config: {exc}")
     if args.port < 1024 or args.port > 65535:
@@ -410,6 +466,7 @@ def main(argv: list[str] | None = None) -> None:
         tuple(args.allowed_attachment_names),
         script_backup_dir=args.script_backup_dir,
         request_timeout=args.request_timeout,
+        workspace_roots=args.workspace_roots,
     )
     mcp = create_mcp_server(service, token=token, resource_url=endpoint)
 

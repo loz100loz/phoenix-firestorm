@@ -23,7 +23,10 @@ param(
     [string]$ScriptBackupDirectory,
 
     [Parameter()]
-    [string]$ViewerWorkingDirectory
+    [string]$ViewerWorkingDirectory,
+
+    [Parameter()]
+    [string[]]$WorkspaceRoot = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -103,6 +106,26 @@ foreach ($name in $AllowedAttachmentName) {
     }
 }
 
+$workspaceRoots = @{}
+foreach ($binding in $WorkspaceRoot) {
+    $separator = $binding.IndexOf('=')
+    if ($separator -le 0 -or $separator -eq $binding.Length - 1) {
+        throw "Workspace roots must use KEY=PATH: $binding"
+    }
+    $key = $binding.Substring(0, $separator)
+    $path = $binding.Substring($separator + 1)
+    if ($key -notmatch '^[a-z0-9][a-z0-9_-]{0,63}$') {
+        throw "Invalid workspace key: $key"
+    }
+    if ($workspaceRoots.ContainsKey($key)) {
+        throw "Duplicate workspace key: $key"
+    }
+    if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+        throw "Workspace root not found: $path"
+    }
+    $workspaceRoots[$key] = (Resolve-Path -LiteralPath $path).Path
+}
+
 $leapExecutable = $bridgePython.Replace('\', '/')
 if ($leapExecutable -match '\s') {
     throw "The bridge Python path cannot contain whitespace because Firestorm reparses --leap commands: $bridgePython"
@@ -114,6 +137,9 @@ $launchConfig = @{
     capture_dir = $CaptureDirectory
     script_backup_dir = $ScriptBackupDirectory
     allowed_attachment_names = @($AllowedAttachmentName)
+}
+if ($workspaceRoots.Count -gt 0) {
+    $launchConfig.workspace_roots = $workspaceRoots
 }
 $launchConfigJson = $launchConfig | ConvertTo-Json -Compress
 $launchConfigToken = [Convert]::ToBase64String(
@@ -166,4 +192,5 @@ if ($PSCmdlet.ShouldProcess($ViewerPath, 'Launch Firestorm with the Stage 0 MCP 
     SessionFile = $SessionFile
     CaptureDirectory = $CaptureDirectory
     ScriptBackupDirectory = $ScriptBackupDirectory
+    WorkspaceRoots = @($workspaceRoots.Keys)
 }

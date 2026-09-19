@@ -9,8 +9,10 @@ project or any live Second Life object.
 - `score-board` demonstrates a script that remains manual.
 
 The object and task-script names are deliberately fake. Detection of an
-`on_save` event does not authorize a live upload; world-object resolution and
-remote transport are separate guarded stages.
+`on_save` event does not authorize a live upload. The folder may be launch-
+allowlisted to exercise workspace validation and MCP status routing, but its
+names intentionally cannot match the user's live objects. Status is read-only
+and push remains a separate guarded stage.
 
 Validate it from the bridge directory:
 

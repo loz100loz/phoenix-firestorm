@@ -81,6 +81,7 @@ presence is not permission for general object writes.
 | Strict self-owner gate and expiring target handles | Implemented, automated-tested, and live-tested |
 | Changed-selection rejection | Implemented, automated-tested, and live-tested |
 | Expired and cross-viewer handle rejection | Implemented and automated-tested; controlled multi-viewer live proof remains future work |
+| Hash-only `workspace_status` comparison | Implemented and automated-tested; fake example names intentionally have no live target |
 | Push a saved file into Firestorm | Not wired yet |
 | Remote Tailscale endpoint and pairing | Designed, not configured |
 
@@ -92,7 +93,6 @@ tools after selected save events:
 
 | Planned tool/control | Purpose |
 | --- | --- |
-| `workspace_status` | Compare mapped local and permitted in-world scripts and report unchanged, local-ahead, remote-ahead, conflict, missing, or blocked |
 | `preview_workspace_push` | Create a reviewable outside-Git plan/diff without uploading |
 | `apply_workspace_push` | Recheck hashes, back up, upload, compile, return diagnostics, exact-read-verify, and restore on failure |
 | `preview_workspace_pull` / `apply_workspace_pull` | Bring permitted in-world changes back without silently overwriting local work |

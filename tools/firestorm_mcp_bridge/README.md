@@ -17,6 +17,7 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `viewer_context`
 - `inspect_selected_target`
 - `revalidate_selected_target`
+- `workspace_status`
 - `touch_test_hud`
 - `capture_viewer`
 - `list_test_hud_scripts`
@@ -34,6 +35,13 @@ strictly owned by the logged-in avatar and modifiable. Group-owned or
 other-avatar-owned targets are reported as blocked. `revalidate_selected_target`
 rejects expired, cross-viewer or changed target state. Public target summaries
 do not include the runtime object or task-item UUIDs retained inside the handle.
+
+`workspace_status` accepts a named allowlisted workspace, manifest device/script
+keys, and a live target handle. It revalidates the selected self-owned target,
+checks mapped kind/name and exact script identity/permissions, reads both sources
+internally, revalidates again, and returns only canonical hashes, byte counts and
+`unchanged`, `local_ahead`, `remote_ahead`, `conflict`, `missing`, or `blocked`.
+It never returns source and performs no viewer or workspace write.
 
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
@@ -138,13 +146,16 @@ keep Firestorm's working directory at the source resource tree:
 .\launch_installed_firestorm.ps1 `
   -ViewerPath '..\..\build-vc170-64\newview\Release\firestorm-bin-next.exe' `
   -ViewerWorkingDirectory '..\..\indra\newview' `
-  -Multiple
+  -Multiple `
+  -WorkspaceRoot 'fake-lsl-game=.\examples\fake_lsl_game'
 ```
 
 The Release executable directory is not a packaged installation and must not be
 used as `-ViewerWorkingDirectory`; doing so omits source-tree application
 settings such as `app_settings/settings_files.xml`. Build the Release
 `copy_w_viewer_manifest` target when staged runtime dependencies need refresh.
+`-WorkspaceRoot KEY=PATH` may be repeated. The resolved roots are fixed in the
+bridge launch configuration; MCP callers cannot substitute another path.
 
 The Windows launcher packs bridge settings into a base64url JSON launch token and uses forward slashes for the bridge executable path. Firestorm reparses the text supplied to `--leap`, treating backslashes as escapes, so this avoids both nested-quote damage and stripped Windows path separators while preserving attachment names and configuration paths that contain spaces.
 
@@ -159,6 +170,8 @@ Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. 
 - Touch is restricted to a currently worn, explicitly allowlisted attachment name.
 - Selected-object inspection is read-only; names never authorize a target, and
   only a strict self-owned, modifiable object can receive a session-bound handle.
+- Workspace comparison is read-only and limited to named launch-allowlisted
+  roots, manifest keys, a revalidated handle, and hash-only results.
 - Screenshots hide viewer UI by default.
 - The reversible script mutation is limited to exactly one
   script in the exact allowlisted worn test HUD; caller-supplied source and IDs

@@ -37,6 +37,14 @@ class FakeLeap:
         self.selection_root_count = 1
         self.additional_link_ids: list[str] = []
         self.script_name = "MCP POC Controller"
+        self.script_present = True
+        self.duplicate_script_name = False
+        self.duplicate_script_item_id = False
+        self.script_can_copy = True
+        self.script_can_modify = True
+        self.script_source_requests = 0
+        self.change_selection_on_source_read = False
+        self.selected_is_attachment = False
         self.inspect_selection_error: str | None = None
         self.task_inventory_requests = 0
 
@@ -66,17 +74,35 @@ class FakeLeap:
             return {"ok": True}
         if pump == "LLScriptAutomation" and data["op"] == "getTaskInventory":
             self.task_inventory_requests += 1
-            return {
-                "items": [
+            if not self.script_present:
+                return {"items": []}
+            items = [
+                {
+                    "item_id": "33333333-3333-3333-3333-333333333333",
+                    "name": self.script_name,
+                    "description": "Disposable proof script",
+                    "is_script": True,
+                    "can_copy": self.script_can_copy,
+                    "can_modify": self.script_can_modify,
+                }
+            ]
+            if self.duplicate_script_name:
+                items.append(
                     {
-                        "item_id": "33333333-3333-3333-3333-333333333333",
+                        "item_id": (
+                            "33333333-3333-3333-3333-333333333333"
+                            if self.duplicate_script_item_id
+                            else "77777777-7777-7777-7777-777777777777"
+                        ),
                         "name": self.script_name,
-                        "description": "Disposable proof script",
+                        "description": "Duplicate synthetic script",
                         "is_script": True,
                         "can_copy": True,
                         "can_modify": True,
                     }
-                ]
+                )
+            return {
+                "items": items
             }
         if pump == "LLScriptAutomation" and data["op"] == "getViewerContext":
             return {
@@ -110,7 +136,7 @@ class FakeLeap:
                 "root_name": self.selected_name,
                 "root_description": "Synthetic selected-object fixture",
                 "is_root": self.selected_object_id == self.selected_root_id,
-                "is_attachment": False,
+                "is_attachment": self.selected_is_attachment,
                 "attachment_item_id": "00000000-0000-0000-0000-000000000000",
                 "link_number": 0 if not self.additional_link_ids else 1,
                 "link_count": 1 + len(self.additional_link_ids),
@@ -134,6 +160,9 @@ class FakeLeap:
                 "link_ids": [self.selected_root_id, *self.additional_link_ids],
             }
         if pump == "LLScriptAutomation" and data["op"] == "getScriptSource":
+            self.script_source_requests += 1
+            if self.change_selection_on_source_read:
+                self.selected_name = "Changed During Source Read"
             return {"source": self.script_source}
         if pump == "LLScriptAutomation" and data["op"] == "updateScriptSource":
             self.script_source = data["source"]
@@ -160,6 +189,51 @@ def service(tmp_path):
         tmp_path / "captures",
         ("MCP POC ROOT",),
         touch_cooldown=0,
+    )
+
+
+def make_workspace_service(
+    tmp_path: Path,
+    *,
+    local_source: str | None = None,
+    remote_source: str | None = None,
+    target_kind: str = "selected_object",
+    target_name: str = "Disposable Selected Device",
+) -> tuple[Stage0Service, Path]:
+    leap = FakeLeap()
+    if remote_source is not None:
+        leap.script_source = remote_source
+    if local_source is None:
+        local_source = leap.script_source
+    root = tmp_path / "workspace"
+    source = root / "devices" / "fixture" / "controller.lsl"
+    source.parent.mkdir(parents=True)
+    source.write_text(local_source, encoding="utf-8")
+    manifest = {
+        "version": 1,
+        "devices": {
+            "fixture": {
+                "target": {"kind": target_kind, "name": target_name},
+                "scripts": {
+                    "controller": {
+                        "path": "devices/fixture/controller.lsl",
+                        "task_script_name": "MCP POC Controller",
+                        "sync_mode": "manual",
+                    }
+                },
+            }
+        },
+    }
+    (root / "firestorm-mcp.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return (
+        Stage0Service(
+            leap,
+            tmp_path / "captures",
+            ("MCP POC ROOT",),
+            touch_cooldown=0,
+            workspace_roots={"fixture-workspace": root},
+        ),
+        source,
     )
 
 
@@ -359,6 +433,169 @@ def test_target_handle_expires_without_extending_its_lifetime(tmp_path):
 
     with pytest.raises(LeapError, match="target handle has expired"):
         service.revalidate_selected_target(handle)
+
+
+def test_workspace_status_reports_unchanged_without_returning_source_or_ids(tmp_path):
+    service, _ = make_workspace_service(tmp_path)
+    handle = service.inspect_selected_target()["target_handle"]
+
+    result = service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+
+    assert result["status"] == "unchanged"
+    assert result["baseline_known"] is True
+    assert result["source_returned"] is False
+    assert result["writes_performed"] is False
+    assert result["local"]["sha256"] == result["remote"]["sha256"]
+    assert service.viewer_status()["workspace_keys"] == ["fixture-workspace"]
+    serialized = json.dumps(result, sort_keys=True)
+    assert "llOwnerSay" not in serialized
+    assert "33333333-3333-3333-3333-333333333333" not in serialized
+    assert "44444444-4444-4444-4444-444444444444" not in serialized
+    assert service.leap.script_updates == []
+
+
+def test_workspace_status_classifies_local_remote_and_both_changed(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    handle = service.inspect_selected_target()["target_handle"]
+    assert service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )["status"] == "unchanged"
+
+    source.write_text("default { state_entry() { llOwnerSay(\"local\"); } }\n", encoding="utf-8")
+    assert service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )["status"] == "local_ahead"
+
+    source.write_text(service.leap.script_source, encoding="utf-8")
+    service.leap.script_source = "default { state_entry() { llOwnerSay(\"remote\"); } }\n"
+    assert service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )["status"] == "remote_ahead"
+
+    source.write_text("default { state_entry() { llOwnerSay(\"local again\"); } }\n", encoding="utf-8")
+    assert service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )["status"] == "conflict"
+
+
+def test_workspace_status_different_without_baseline_is_conflict(tmp_path):
+    service, _ = make_workspace_service(
+        tmp_path,
+        local_source="default { state_entry() { llOwnerSay(\"local\"); } }\n",
+        remote_source="default { state_entry() { llOwnerSay(\"remote\"); } }\n",
+    )
+    handle = service.inspect_selected_target()["target_handle"]
+
+    result = service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+
+    assert result["status"] == "conflict"
+    assert result["baseline_known"] is False
+    assert result["baseline_sha256"] is None
+
+
+def test_workspace_status_reports_missing_and_blocks_duplicates_or_permissions(tmp_path):
+    service, _ = make_workspace_service(tmp_path)
+    service.leap.script_present = False
+    handle = service.inspect_selected_target()["target_handle"]
+    missing = service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+    assert missing["status"] == "missing"
+    assert service.leap.script_source_requests == 0
+
+    duplicate_service, _ = make_workspace_service(tmp_path / "duplicate")
+    duplicate_service.leap.duplicate_script_name = True
+    duplicate_handle = duplicate_service.inspect_selected_target()["target_handle"]
+    duplicate = duplicate_service.workspace_status(
+        "fixture-workspace", "fixture", "controller", duplicate_handle
+    )
+    assert duplicate["status"] == "blocked"
+    assert "More than one" in duplicate["reason"]
+    assert duplicate_service.leap.script_source_requests == 0
+
+    denied_service, _ = make_workspace_service(tmp_path / "denied")
+    denied_service.leap.script_can_copy = False
+    denied_handle = denied_service.inspect_selected_target()["target_handle"]
+    denied = denied_service.workspace_status(
+        "fixture-workspace", "fixture", "controller", denied_handle
+    )
+    assert denied["status"] == "blocked"
+    assert "copyable and modifiable" in denied["reason"]
+    assert denied_service.leap.script_source_requests == 0
+
+
+def test_workspace_status_blocks_target_mapping_mismatch_before_source_read(tmp_path):
+    service, _ = make_workspace_service(tmp_path, target_name="Some Other Device")
+    handle = service.inspect_selected_target()["target_handle"]
+
+    result = service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+
+    assert result["status"] == "blocked"
+    assert "name does not match" in result["reason"]
+    assert service.leap.script_source_requests == 0
+
+    kind_service, _ = make_workspace_service(
+        tmp_path / "kind", target_kind="worn_attachment"
+    )
+    kind_handle = kind_service.inspect_selected_target()["target_handle"]
+    kind_result = kind_service.workspace_status(
+        "fixture-workspace", "fixture", "controller", kind_handle
+    )
+    assert kind_result["status"] == "blocked"
+    assert "kind does not match" in kind_result["reason"]
+    assert kind_service.leap.script_source_requests == 0
+
+
+def test_inspection_rejects_duplicate_script_item_identity(service):
+    service.leap.duplicate_script_name = True
+    service.leap.duplicate_script_item_id = True
+
+    with pytest.raises(LeapError, match="duplicate selected script item UUIDs"):
+        service.inspect_selected_target()
+
+
+def test_workspace_status_rejects_unknown_workspace_and_stale_handle(tmp_path):
+    service, _ = make_workspace_service(tmp_path)
+    handle = service.inspect_selected_target()["target_handle"]
+    with pytest.raises(LeapError, match="workspace key is not allowlisted"):
+        service.workspace_status("unknown", "fixture", "controller", handle)
+
+    service.leap.selected_name = "Changed Selected Device"
+    with pytest.raises(LeapError, match="selected target changed"):
+        service.workspace_status(
+            "fixture-workspace", "fixture", "controller", handle
+        )
+    assert service.leap.script_source_requests == 0
+
+
+def test_workspace_status_revalidates_again_after_remote_source_read(tmp_path):
+    service, _ = make_workspace_service(tmp_path)
+    handle = service.inspect_selected_target()["target_handle"]
+    service.leap.change_selection_on_source_read = True
+
+    with pytest.raises(LeapError, match="selected target changed"):
+        service.workspace_status(
+            "fixture-workspace", "fixture", "controller", handle
+        )
+
+    assert service.leap.script_source_requests == 1
+    with pytest.raises(LeapError, match="unknown to this viewer session"):
+        service.revalidate_selected_target(handle)
+
+
+def test_workspace_source_reader_rechecks_allowlisted_containment(tmp_path):
+    service, _ = make_workspace_service(tmp_path)
+    outside = tmp_path / "outside.lsl"
+    outside.write_text("default {}\n", encoding="utf-8")
+
+    with pytest.raises(LeapError, match="escaped its allowlisted workspace"):
+        service._read_workspace_source(outside, tmp_path / "workspace")
 
 
 def test_touch_is_limited_to_worn_allowlisted_attachment(service):

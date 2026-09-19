@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .leap import LeapConnection, LeapError
+from .workspace import WorkspaceError, load_workspace
 
 NULL_UUID = "00000000-0000-0000-0000-000000000000"
 MAX_SCRIPT_SOURCE_BYTES = 64 * 1024
@@ -45,6 +46,7 @@ class Stage0Service:
         touch_cooldown: float = 1.0,
         target_handle_ttl: float = TARGET_HANDLE_TTL_SECONDS,
         monotonic_clock: Callable[[], float] = time.monotonic,
+        workspace_roots: dict[str, Path] | None = None,
     ) -> None:
         if target_handle_ttl <= 0:
             raise ValueError("target_handle_ttl must be positive")
@@ -62,12 +64,24 @@ class Stage0Service:
         self.touch_cooldown = touch_cooldown
         self.target_handle_ttl = target_handle_ttl
         self._monotonic_clock = monotonic_clock
+        self.workspace_roots: dict[str, Path] = {}
+        for key, root in (workspace_roots or {}).items():
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", key):
+                raise ValueError(
+                    "workspace keys must be 1-64 lowercase letters, digits, hyphens, or underscores"
+                )
+            resolved = root.resolve()
+            if not resolved.is_dir():
+                raise ValueError(f"workspace root does not exist: {resolved}")
+            self.workspace_roots[key] = resolved
         self.session_fingerprint = uuid.uuid4().hex
         self._apis: dict[str, Any] | None = None
         self._touch_lock = threading.Lock()
         self._script_proof_lock = threading.Lock()
         self._target_handle_lock = threading.Lock()
         self._target_handles: dict[str, dict[str, Any]] = {}
+        self._workspace_baseline_lock = threading.Lock()
+        self._workspace_baselines: dict[tuple[str, str, str, str], str] = {}
         self._last_touch = 0.0
 
     def discover_viewer_apis(self, *, refresh: bool = False) -> dict[str, Any]:
@@ -104,6 +118,7 @@ class Stage0Service:
             "required_stage0": discovery["required_stage0"],
             "required_script_proof": discovery["required_script_proof"],
             "allowed_attachment_names": list(self.allowed_attachment_names),
+            "workspace_keys": sorted(self.workspace_roots),
             "session_fingerprint": self.session_fingerprint,
         }
 
@@ -167,6 +182,151 @@ class Stage0Service:
     def revalidate_selected_target(self, target_handle: str) -> dict[str, Any]:
         """Re-resolve a selected target and reject expired or changed identity."""
 
+        raw, scripts, identity_sha256, entry = self._revalidate_target_handle(
+            target_handle
+        )
+
+        result = self._public_target_summary(raw, scripts, identity_sha256)
+        result.update(
+            {
+                "valid": True,
+                "target_handle": target_handle,
+                "expires_at": str(entry["expires_at"]),
+            }
+        )
+        return result
+
+    def workspace_status(
+        self,
+        workspace_key: str,
+        device_key: str,
+        script_key: str,
+        target_handle: str,
+    ) -> dict[str, Any]:
+        """Compare one allowlisted local mapping with permitted selected-object source."""
+
+        root = self.workspace_roots.get(workspace_key)
+        if root is None:
+            raise LeapError("The workspace key is not allowlisted for this bridge session")
+        try:
+            manifest = load_workspace(root)
+        except WorkspaceError as exc:
+            raise LeapError(f"The allowlisted workspace is invalid: {exc}") from exc
+
+        device = next((item for item in manifest.devices if item.key == device_key), None)
+        if device is None:
+            raise LeapError("The device key is not present in the allowlisted workspace")
+        script = next((item for item in device.scripts if item.script_key == script_key), None)
+        if script is None:
+            raise LeapError("The script key is not present in the selected workspace device")
+
+        raw, scripts, identity_sha256, _ = self._revalidate_target_handle(target_handle)
+        common = {
+            "workspace_key": workspace_key,
+            "device_key": device.key,
+            "script_key": script.script_key,
+            "relative_path": script.relative_path,
+            "target_kind": device.target_kind,
+            "expected_target_name": device.target_name,
+            "task_script_name": script.task_script_name,
+            "sync_mode": script.sync_mode,
+            "target_identity_sha256": identity_sha256,
+            "source_returned": False,
+            "writes_performed": False,
+            "baseline_known": False,
+            "baseline_sha256": None,
+            "local": None,
+            "remote": None,
+        }
+
+        selected_name = str(raw.get("root_name") or raw.get("object_name") or "")
+        expected_attachment = device.target_kind == "worn_attachment"
+        if bool(raw.get("is_attachment")) != expected_attachment:
+            return {
+                **common,
+                "status": "blocked",
+                "reason": "The selected target kind does not match the workspace mapping",
+                "selected_target_name": selected_name,
+            }
+        if selected_name != device.target_name:
+            return {
+                **common,
+                "status": "blocked",
+                "reason": "The selected target name does not match the workspace mapping",
+                "selected_target_name": selected_name,
+            }
+
+        matches = [item for item in scripts if str(item.get("name", "")) == script.task_script_name]
+        if not matches:
+            local_source = self._read_workspace_source(script.path, root)
+            return {
+                **common,
+                "status": "missing",
+                "reason": "The mapped task script is missing from the selected prim",
+                "selected_target_name": selected_name,
+                "local": self._source_summary(local_source),
+            }
+        if len(matches) != 1:
+            return {
+                **common,
+                "status": "blocked",
+                "reason": "More than one task script has the mapped exact name",
+                "selected_target_name": selected_name,
+            }
+
+        item = matches[0]
+        if not bool(item.get("can_copy")) or not bool(item.get("can_modify")):
+            return {
+                **common,
+                "status": "blocked",
+                "reason": "The mapped task script is not both copyable and modifiable",
+                "selected_target_name": selected_name,
+            }
+
+        local_source = self._read_workspace_source(script.path, root)
+        remote_source = self._get_script_source(raw["object_id"], item["item_id"])
+        _, _, verified_identity_sha256, _ = self._revalidate_target_handle(target_handle)
+        if verified_identity_sha256 != identity_sha256:
+            raise LeapError("The selected target changed during workspace comparison")
+        local = self._source_summary(local_source)
+        remote = self._source_summary(remote_source)
+        baseline_key = (workspace_key, device.key, script.script_key, identity_sha256)
+        with self._workspace_baseline_lock:
+            baseline = self._workspace_baselines.get(baseline_key)
+            if local["sha256"] == remote["sha256"]:
+                status = "unchanged"
+                reason = "Local and in-world source hashes match"
+                self._workspace_baselines[baseline_key] = local["sha256"]
+                baseline = local["sha256"]
+            elif baseline is None:
+                status = "conflict"
+                reason = "Local and in-world source differ without a verified sync baseline"
+            elif local["sha256"] != baseline and remote["sha256"] == baseline:
+                status = "local_ahead"
+                reason = "Only the local source changed from the verified baseline"
+            elif local["sha256"] == baseline and remote["sha256"] != baseline:
+                status = "remote_ahead"
+                reason = "Only the in-world source changed from the verified baseline"
+            else:
+                status = "conflict"
+                reason = "Both local and in-world source changed from the verified baseline"
+
+        return {
+            **common,
+            "status": status,
+            "reason": reason,
+            "selected_target_name": selected_name,
+            "baseline_known": baseline is not None,
+            "baseline_sha256": baseline,
+            "local": local,
+            "remote": remote,
+        }
+
+    def _revalidate_target_handle(
+        self, target_handle: str
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], str, dict[str, Any]]:
+        """Return internal live target data only after exact handle revalidation."""
+
         if not re.fullmatch(r"[0-9a-f]{32}", target_handle):
             raise LeapError("target_handle must be a 32-character lowercase hexadecimal value")
         now = self._monotonic_clock()
@@ -202,15 +362,7 @@ class Stage0Service:
                 self._target_handles.pop(target_handle, None)
                 raise LeapError("The target handle expired during revalidation")
 
-        result = self._public_target_summary(raw, scripts, identity_sha256)
-        result.update(
-            {
-                "valid": True,
-                "target_handle": target_handle,
-                "expires_at": str(entry["expires_at"]),
-            }
-        )
-        return result
+        return raw, scripts, identity_sha256, entry
 
     def list_attachments(self) -> list[dict[str, Any]]:
         self._require_api("LLAgent")
@@ -777,6 +929,8 @@ class Stage0Service:
                 if script["item_id"] == NULL_UUID:
                     raise LeapError("Firestorm returned a null selected script item UUID")
                 scripts.append(script)
+            if len({item["item_id"] for item in scripts}) != len(scripts):
+                raise LeapError("Firestorm returned duplicate selected script item UUIDs")
             scripts.sort(key=lambda item: (str(item.get("name", "")), item["item_id"]))
 
         identity = {
@@ -980,7 +1134,39 @@ class Stage0Service:
         source = response.get("source")
         if not isinstance(source, str):
             raise LeapError("Firestorm returned an invalid script source result")
+        if len(source.encode("utf-8")) > MAX_SCRIPT_SOURCE_BYTES:
+            raise LeapError("Firestorm returned script source larger than the allowed limit")
         return source
+
+    @staticmethod
+    def _read_workspace_source(path: Path, workspace_root: Path) -> str:
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(workspace_root)
+        except (OSError, ValueError) as exc:
+            raise LeapError("The mapped local LSL file escaped its allowlisted workspace") from exc
+        try:
+            data = resolved.read_bytes()
+        except OSError as exc:
+            raise LeapError("The mapped local LSL file could not be read") from exc
+        if len(data) > MAX_SCRIPT_SOURCE_BYTES:
+            raise LeapError("The mapped local LSL file is larger than the allowed limit")
+        if b"\0" in data:
+            raise LeapError("The mapped local LSL file contains a NUL byte")
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise LeapError("The mapped local LSL file is not valid UTF-8") from exc
+
+    @staticmethod
+    def _source_summary(source: str) -> dict[str, Any]:
+        data = source.encode("utf-8")
+        canonical = source.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+        return {
+            "sha256": hashlib.sha256(canonical).hexdigest(),
+            "bytes": len(data),
+            "hash_normalization": "utf8-lf",
+        }
 
     def _update_script_source(
         self,

@@ -24,7 +24,11 @@ preview/apply/compile/read-back and exact restoration have passed. The
 longer-term target is manifest-driven sync from the user's VS Code game-project
 folders. A synthetic three-device workspace plus validated, debounced save
 detection is implemented without accessing the real game project or uploading
-to live objects. Private Tailscale transport is designed but not configured.
+to live objects. The read-only `workspace_status` MCP tool now connects a named,
+launch-allowlisted workspace mapping to a revalidated selected target and
+reports hash-only sync state. It is automated-tested against synthetic fixtures;
+the deliberately nonexistent example targets prevent an accidental live match.
+Private Tailscale transport is designed but not configured.
 
 The approved read-only target-identity foundation is also implemented and
 automated-tested. It reports per-viewer avatar/grid/region context, inspects one
@@ -59,7 +63,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Path | Responsibility |
 | --- | --- |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/leap.py` | Length-prefixed LLSD LEAP transport, request correlation, and API discovery |
-| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy, guarded test-HUD transactions, and read-only session-bound target identity handles |
+| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy, guarded test-HUD transactions, session-bound target identity, and hash-only workspace comparison |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/server.py` | Authenticated localhost MCP server, tools, launch config, and session descriptor |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/workspace.py` | Manifest validation, path containment, source validation, and debounced local-save detection |
 | `tools/firestorm_mcp_bridge/launch_installed_firestorm.ps1` | Safe installed-viewer launch, side-by-side channel selection, multi-login isolation, and Firestorm-version argument compatibility |
@@ -79,6 +83,9 @@ must not be implemented until the user explicitly approves a new stage.
   ten-minute in-memory handle bound to one bridge/avatar session; strict
   self-owner, permission, region, linkset, metadata and inventory state are
   revalidated before that handle can be reused.
+- Workspace tools can access only roots named at bridge launch. The current
+  `workspace_status` operation returns canonical hashes and mapping/status
+  metadata, never local or in-world source, and performs no writes.
 - Runtime session descriptors and screenshots stay under
   `%LOCALAPPDATA%\FirestormMCP` and must not be committed.
 - Multi-login viewers receive separate ports, session descriptors, and capture
@@ -97,6 +104,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
 | Stage 1 | Implemented, build-tested, and live-tested | Viewer/avatar context, selected-linkset inspection, strict self-owner gate, permission/script summary, expiring handle and stale/cross-viewer rejection; no world-object writes |
 | Stage 2 | Proof, three-color edit, and reusable test-HUD editor live-passed | Exact test-HUD task inventory, permitted retrieval, reversible proof, fixed color edit, and bounded preview/apply transactions; no other objects |
+| Workspace status | Implemented and automated-tested; fake live target intentionally unavailable | Named workspace allowlist, manifest mapping, selected-target revalidation, exact script resolution, hash-only comparison, session baseline; no writes |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |
 

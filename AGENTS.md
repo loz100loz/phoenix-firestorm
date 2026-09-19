@@ -95,6 +95,18 @@ stages, beginning with the exact test HUD. Do not infer authorization to write
 other devices until owned/selected-object resolution and its safety policy are
 explicitly approved and live-proven.
 
+The user approved the first read-only workspace comparison tool. It must use
+only workspace roots named and allowlisted when the bridge launches; tool calls
+may accept workspace/device/script keys and a short-lived target handle, but no
+filesystem path, object UUID, or task-item UUID. It must revalidate the selected
+target before reading, require target kind and exact mapped name as assertions,
+resolve exactly one copyable/modifiable script by exact name, and revalidate
+again after the source read. Return only hashes, byte counts, mapping metadata,
+and status; never return source or write to the workspace or viewer. Hashes use
+UTF-8 text with line endings normalized to LF so Windows CRLF is not a false
+change. A verified in-memory baseline may be established only when local and
+remote hashes match; it is session-bound and must not be persisted or guessed.
+
 Use `tools/firestorm_mcp_bridge/examples/fake_lsl_game` for workspace manifest
 and save-watcher development until the user explicitly supplies a real project
 root. Never scan for or guess the user's game workspace. Fake workspace targets

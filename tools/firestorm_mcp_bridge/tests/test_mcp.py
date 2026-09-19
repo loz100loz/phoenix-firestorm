@@ -5,17 +5,11 @@ import asyncio
 from mcp import Client
 
 from firestorm_mcp_bridge.server import create_mcp_server
-from test_service import FakeLeap
-from firestorm_mcp_bridge.service import Stage0Service
+from test_service import make_workspace_service
 
 
 def test_mcp_tools_are_callable_in_process(tmp_path):
-    service = Stage0Service(
-        FakeLeap(),
-        tmp_path / "captures",
-        ("MCP POC ROOT",),
-        touch_cooldown=0,
-    )
+    service, _ = make_workspace_service(tmp_path)
     server = create_mcp_server(service)
 
     async def exercise() -> None:
@@ -28,6 +22,7 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
                 "viewer_context",
                 "inspect_selected_target",
                 "revalidate_selected_target",
+                "workspace_status",
                 "touch_test_hud",
                 "list_test_hud_scripts",
                 "prove_test_hud_script_round_trip",
@@ -44,6 +39,19 @@ def test_mcp_tools_are_callable_in_process(tmp_path):
             context = await client.call_tool("viewer_context", {})
             assert context.is_error is False
             assert context.structured_content["avatar_name"] == "ninja.nova"
+
+            inspected = await client.call_tool("inspect_selected_target", {})
+            workspace = await client.call_tool(
+                "workspace_status",
+                {
+                    "workspace_key": "fixture-workspace",
+                    "device_key": "fixture",
+                    "script_key": "controller",
+                    "target_handle": inspected.structured_content["target_handle"],
+                },
+            )
+            assert workspace.is_error is False
+            assert workspace.structured_content["status"] == "unchanged"
 
             screenshot = await client.call_tool(
                 "capture_viewer",
