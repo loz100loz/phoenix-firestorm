@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "debounce_ms": 750,
+  "devices": {
+    "development-hud": {
+      "target": {
+        "kind": "worn_attachment",
+        "name": "FAKE Development HUD"
+      },
+      "scripts": {
+        "main": {
+          "path": "devices/development-hud/main.lsl",
+          "task_script_name": "Main Controller",
+          "sync_mode": "on_save"
+        },
+        "display": {
+          "path": "devices/development-hud/display.lsl",
+          "task_script_name": "Display Controller",
+          "sync_mode": "on_save"
+        }
+      }
+    },
+    "training-door": {
+      "target": {
+        "kind": "selected_object",
+        "name": "FAKE Training Door"
+      },
+      "scripts": {
+        "controller": {
+          "path": "devices/training-door/controller.lsl",
+          "task_script_name": "Door Controller",
+          "sync_mode": "on_save"
+        }
+      }
+    },
+    "score-board": {
+      "target": {
+        "kind": "selected_object",
+        "name": "FAKE Score Board"
+      },
+      "scripts": {
+        "display": {
+          "path": "devices/score-board/display.lsl",
+          "task_script_name": "Score Display",
+          "sync_mode": "manual"
+        }
+      }
+    }
+  }
+}

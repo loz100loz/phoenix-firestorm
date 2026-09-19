@@ -82,6 +82,17 @@ stages, beginning with the exact test HUD. Do not infer authorization to write
 other devices until owned/selected-object resolution and its safety policy are
 explicitly approved and live-proven.
 
+Use `tools/firestorm_mcp_bridge/examples/fake_lsl_game` for workspace manifest
+and save-watcher development until the user explicitly supplies a real project
+root. Never scan for or guess the user's game workspace. Fake workspace targets
+must remain deliberately nonexistent and must not trigger live viewer writes.
+
+Remote access is intended to use tailnet-only Tailscale Serve in front of the
+existing loopback listener. Do not bind MCP to all interfaces and do not use
+Tailscale Funnel. Do not change Tailscale state until the user approves the
+exact hostname, port, access policy, and rollback command. Preserve bearer
+authentication in addition to tailnet policy.
+
 ## Live-test safety
 
 - Never request, read, store, or enter the user's Firestorm credentials.

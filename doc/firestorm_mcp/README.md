@@ -22,7 +22,9 @@ The next approved implementation step is a reusable two-step editor for that
 same test HUD. Its transaction core and automated tests are implemented; live
 preview/apply/compile/read-back and exact restoration have passed. The
 longer-term target is manifest-driven sync from the user's VS Code game-project
-folders.
+folders. A synthetic three-device workspace plus validated, debounced save
+detection is implemented without accessing the real game project or uploading
+to live objects. Private Tailscale transport is designed but not configured.
 
 Later-stage features in the roadmap are ideas and design targets only. They
 must not be implemented until the user explicitly approves a new stage.
@@ -37,6 +39,7 @@ must not be implemented until the user explicitly approves a new stage.
 | [`SCRIPT_WRITE_FEASIBILITY.md`](SCRIPT_WRITE_FEASIBILITY.md) | Source-backed answer on whether MCP can write and compile an existing HUD script, what is missing, and the safest first live write test | Read before designing or implementing script access |
 | [`STAGE_2_SCRIPT_WRITE_PROOF.md`](STAGE_2_SCRIPT_WRITE_PROOF.md) | Approved safety contract, implementation status, verification order, and eventual live result for the reversible test-HUD script proof | Read before script API work or any live script write; update with every material result |
 | [`WORKSPACE_SYNC.md`](WORKSPACE_SYNC.md) | Target VS Code-to-Firestorm device/script workflow, manifest shape, transaction model, and staged expansion boundary | Read before adding local-file sync or world-object targeting |
+| [`TAILSCALE_REMOTE.md`](TAILSCALE_REMOTE.md) | Tailnet-only remote transport design, current gaps, commands, access controls, and rollback | Read before changing bind, proxy, authentication, or remote-client settings |
 | [`tools/firestorm_mcp_bridge/README.md`](../../tools/firestorm_mcp_bridge/README.md) | Bridge setup, launch instructions, tools, runtime files, and safety boundary | Read before setup/launch; update with operational or tool changes |
 | [`doc/building_windows.md`](../building_windows.md) | Upstream Firestorm Windows build instructions | Read only if an approved later stage requires building the viewer |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | Upstream repository contribution rules | Read before broader viewer changes or upstream contribution work |
@@ -48,6 +51,7 @@ must not be implemented until the user explicitly approves a new stage.
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/leap.py` | Length-prefixed LLSD LEAP transport, request correlation, and API discovery |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/service.py` | Stage 0 policy plus guarded proof, three-color, and two-step test-HUD edit transactions |
 | `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/server.py` | Authenticated localhost MCP server, tools, launch config, and session descriptor |
+| `tools/firestorm_mcp_bridge/src/firestorm_mcp_bridge/workspace.py` | Manifest validation, path containment, source validation, and debounced local-save detection |
 | `tools/firestorm_mcp_bridge/launch_installed_firestorm.ps1` | Safe installed-viewer launch, side-by-side channel selection, multi-login isolation, and Firestorm-version argument compatibility |
 | `tools/firestorm_mcp_bridge/tests/` | LEAP, service, server, MCP, and process smoke tests |
 | `indra/newview/llscriptautomationlistener.*` | Permission-preserving LEAP task-inventory, source retrieval, and source update operations for the approved proof |
@@ -67,6 +71,8 @@ must not be implemented until the user explicitly approves a new stage.
   directories.
 - The user's viewer limits background rendering to 1 FPS, so live screenshot
   checks need extra settling time while Firestorm is tabbed out.
+- Remote transport will keep MCP on `127.0.0.1` and use tailnet-only Tailscale
+  Serve; Funnel and direct all-interface binding are outside the design.
 - Firestorm 7.2.5+ needs LLSD notation for `LeapCommand`; the Windows launcher
   supplies a delimiter-safe LLSD URI value.
 

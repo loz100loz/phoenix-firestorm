@@ -18,6 +18,7 @@ test = ["pytest==8.4.2"]
 
 [project.scripts]
 firestorm-mcp-bridge = "firestorm_mcp_bridge.server:main"
+firestorm-mcp-workspace = "firestorm_mcp_bridge.workspace:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -25,4 +26,3 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
-

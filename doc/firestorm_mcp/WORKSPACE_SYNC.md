@@ -9,6 +9,10 @@ target workflow makes the local `.lsl` files the source of truth and uses
 Firestorm only as the permission-aware compile, install, and runtime-test
 target.
 
+The project folder can live on another tailnet device. In that layout, the
+watcher runs beside VS Code and sends only the mapped saved script over private
+HTTPS to the Firestorm PC; the Firestorm PC does not mount or scan the project.
+
 ## Intended project shape
 
 ```text
@@ -63,8 +67,10 @@ before every operation.
 
 1. **Transaction core:** bounded preview/apply edits for the exact worn
    `MCP POC ROOT`. Implemented, automated-tested, and live-proven.
-2. **Workspace root and manifest:** local file containment, schema validation,
-   status, and single-script push for the exact test HUD.
+2. **Workspace root and manifest:** manifest schema, local containment, UTF-8
+   validation, duplicate mapping checks, and debounced save detection are
+   implemented and tested against a synthetic three-device/four-script
+   workspace. Firestorm status and push wiring remain pending.
 3. **Owned selected object:** explicit current-selection resolution for one
    rezzed disposable device, with the same permission and ambiguity gates.
 4. **Device sets:** multiple mapped scripts per device, deterministic compile
@@ -74,3 +80,11 @@ before every operation.
 
 Stages 3 and later require a separate live safety proof before production game
 objects are allowed.
+
+## Synthetic workspace
+
+`tools/firestorm_mcp_bridge/examples/fake_lsl_game` contains three deliberately
+fake devices with four scripts. Three mappings use `on_save`; one uses
+`manual`. The save watcher waits for file content to remain stable for the
+manifest's debounce interval before emitting one hash-only event. It never
+returns source and is not connected to a live viewer target yet.

@@ -58,6 +58,26 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 ```
 
+## Fake workspace and save watcher
+
+The repository includes a synthetic three-device LSL project under
+`examples/fake_lsl_game`. It never targets a real object. Validate it with:
+
+```powershell
+.\.venv\Scripts\python.exe -m firestorm_mcp_bridge.workspace validate .\examples\fake_lsl_game
+```
+
+Watch it for stable local saves with:
+
+```powershell
+.\.venv\Scripts\python.exe -m firestorm_mcp_bridge.workspace watch .\examples\fake_lsl_game
+```
+
+The watcher validates relative path containment, `.lsl` type, UTF-8 source,
+NUL absence, unique mappings, sync mode, and a configurable 100–10000 ms
+debounce. It emits metadata and hashes, not source. Live Firestorm push wiring
+is intentionally not enabled for these fake object names.
+
 ## Launch from Firestorm
 
 Firestorm must own the bridge process, so start the viewer with a `--leap` command. The Python executable and module must come from this virtual environment.
