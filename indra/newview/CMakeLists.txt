@@ -698,6 +698,7 @@ set(viewer_SOURCE_FILES
     llsceneview.cpp
     llscreenchannel.cpp
     llscripteditor.cpp
+    llscriptautomationlistener.cpp
     llscriptfloater.cpp
     llscrollingpanelparam.cpp
     llscrollingpanelparambase.cpp
@@ -1552,6 +1553,7 @@ set(viewer_HEADER_FILES
     llsceneview.h
     llscreenchannel.h
     llscripteditor.h
+    llscriptautomationlistener.h
     llscriptfloater.h
     llscriptruntimeperms.h
     llscrollingpanelparam.h

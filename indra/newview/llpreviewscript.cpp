@@ -69,6 +69,7 @@
 #include "llscrollcontainer.h"
 #include "llcheckboxctrl.h"
 #include "llscripteditor.h"
+#include "llscriptautomationlistener.h"
 #include "llselectmgr.h"
 #include "lltooldraganddrop.h"
 #include "llscrolllistctrl.h"
@@ -3313,6 +3314,11 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
     LLUUID object_id;
     msg->getUUIDFast(_PREHASH_Script, _PREHASH_ObjectID, object_id);
     msg->getUUIDFast(_PREHASH_Script, _PREHASH_ItemID, item_id);
+    bool running;
+    bool mono;
+    msg->getBOOLFast(_PREHASH_Script, _PREHASH_Running, running);
+    msg->getBOOLFast(_PREHASH_Script, "Mono", mono);
+    postScriptAutomationRunningReply(object_id, item_id, running, mono);
 
     LLSD floater_key;
     floater_key["taskid"] = object_id;
@@ -3320,12 +3326,8 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
     if (LLLiveLSLEditor* instance = LLFloaterReg::findTypedInstance<LLLiveLSLEditor>("preview_scriptedit", floater_key))
     {
         instance->mHaveRunningInfo = true;
-        bool running;
-        msg->getBOOLFast(_PREHASH_Script, _PREHASH_Running, running);
         LLCheckBoxCtrl* runningCheckbox = instance->getChild<LLCheckBoxCtrl>("running");
         runningCheckbox->set(running);
-        bool mono;
-        msg->getBOOLFast(_PREHASH_Script, "Mono", mono);
         LLCheckBoxCtrl* monoCheckbox = instance->getChild<LLCheckBoxCtrl>("mono");
         monoCheckbox->setEnabled(instance->getIsModifiable() && have_script_upload_cap(object_id));
         monoCheckbox->set(mono);
