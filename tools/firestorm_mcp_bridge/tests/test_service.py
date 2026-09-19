@@ -598,6 +598,241 @@ def test_workspace_source_reader_rechecks_allowlisted_containment(tmp_path):
         service._read_workspace_source(outside, tmp_path / "workspace")
 
 
+def establish_local_ahead(
+    service: Stage0Service,
+    source: Path,
+) -> tuple[str, str, str]:
+    handle = service.inspect_selected_target()["target_handle"]
+    remote_source = service.leap.script_source
+    assert service.workspace_status(
+        "fixture-workspace", "fixture", "controller", handle
+    )["status"] == "unchanged"
+    local_source = (
+        'default { state_entry() { llOwnerSay("workspace preview"); } }\n'
+    )
+    source.write_text(local_source, encoding="utf-8")
+    return handle, local_source, remote_source
+
+
+def test_preview_workspace_push_writes_reviewable_outside_git_plan_only(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    handle, local_source, remote_source = establish_local_ahead(service, source)
+
+    result = service.preview_workspace_push(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+
+    assert result["planned"] is True
+    assert result["writes_performed"] is False
+    assert result["source_returned"] is False
+    assert result["baseline_sha256"] == result["remote"]["sha256"]
+    assert result["local"]["sha256"] != result["remote"]["sha256"]
+    diff_path = Path(result["diff_path"])
+    plan_path = diff_path.with_suffix(".json")
+    assert diff_path.is_file()
+    assert plan_path.is_file()
+    assert service.workspace_push_plan_dir not in source.parents
+    diff = diff_path.read_text(encoding="utf-8")
+    assert '-    touch_start(integer total) { llOwnerSay("ready"); }' in diff
+    assert '+default { state_entry() { llOwnerSay("workspace preview"); } }' in diff
+    assert result["diff"]["bytes"] == len(diff_path.read_bytes())
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert plan["session_fingerprint"] == service.session_fingerprint
+    assert plan["object_id"] == "44444444-4444-4444-4444-444444444444"
+    assert plan["item_id"] == "33333333-3333-3333-3333-333333333333"
+    assert remote_source not in plan_path.read_text(encoding="utf-8")
+    assert local_source not in plan_path.read_text(encoding="utf-8")
+    serialized = json.dumps(result, sort_keys=True)
+    assert remote_source not in serialized
+    assert local_source not in serialized
+    assert "33333333-3333-3333-3333-333333333333" not in serialized
+    assert "44444444-4444-4444-4444-444444444444" not in serialized
+    assert service.leap.script_updates == []
+
+
+def test_preview_workspace_push_refuses_non_local_ahead_states(tmp_path):
+    unchanged, _ = make_workspace_service(tmp_path / "unchanged")
+    unchanged_handle = unchanged.inspect_selected_target()["target_handle"]
+    with pytest.raises(LeapError, match="current status is unchanged"):
+        unchanged.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", unchanged_handle
+        )
+
+    unknown, _ = make_workspace_service(
+        tmp_path / "unknown",
+        local_source='default { state_entry() { llOwnerSay("local"); } }\n',
+        remote_source='default { state_entry() { llOwnerSay("remote"); } }\n',
+    )
+    unknown_handle = unknown.inspect_selected_target()["target_handle"]
+    with pytest.raises(LeapError, match="current status is conflict"):
+        unknown.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", unknown_handle
+        )
+
+    remote, remote_file = make_workspace_service(tmp_path / "remote")
+    remote_handle = remote.inspect_selected_target()["target_handle"]
+    assert remote.workspace_status(
+        "fixture-workspace", "fixture", "controller", remote_handle
+    )["status"] == "unchanged"
+    remote.leap.script_source = 'default { state_entry() { llOwnerSay("remote"); } }\n'
+    with pytest.raises(LeapError, match="current status is remote_ahead"):
+        remote.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", remote_handle
+        )
+
+    remote_file.write_text(
+        'default { state_entry() { llOwnerSay("local too"); } }\n', encoding="utf-8"
+    )
+    with pytest.raises(LeapError, match="current status is conflict"):
+        remote.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", remote_handle
+        )
+
+
+@pytest.mark.parametrize(
+    ("setup", "message"),
+    [
+        (lambda service: setattr(service.leap, "script_present", False), "missing"),
+        (lambda service: setattr(service.leap, "script_can_copy", False), "blocked"),
+        (lambda service: setattr(service.leap, "duplicate_script_name", True), "blocked"),
+    ],
+)
+def test_preview_workspace_push_refuses_missing_denied_or_duplicate_script(
+    tmp_path, setup, message
+):
+    service, _ = make_workspace_service(tmp_path)
+    setup(service)
+    handle = service.inspect_selected_target()["target_handle"]
+
+    with pytest.raises(LeapError, match=f"current status is {message}"):
+        service.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", handle
+        )
+
+    assert service.leap.script_updates == []
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        {"target_name": "Wrong Selected Device"},
+        {"target_kind": "worn_attachment"},
+    ],
+)
+def test_preview_workspace_push_refuses_mapping_mismatch(tmp_path, mapping):
+    service, _ = make_workspace_service(tmp_path, **mapping)
+    handle = service.inspect_selected_target()["target_handle"]
+
+    with pytest.raises(LeapError, match="current status is blocked"):
+        service.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", handle
+        )
+
+
+def test_preview_workspace_push_rejects_stale_expired_cross_viewer_and_duplicate_ids(
+    tmp_path,
+):
+    stale, _ = make_workspace_service(tmp_path / "stale")
+    stale_handle = stale.inspect_selected_target()["target_handle"]
+    stale.leap.selected_name = "Changed Selected Device"
+    with pytest.raises(LeapError, match="selected target changed"):
+        stale.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", stale_handle
+        )
+
+    expired, _ = make_workspace_service(tmp_path / "expired")
+    expired_handle = expired.inspect_selected_target()["target_handle"]
+    expired._monotonic_clock = lambda: float("inf")
+    with pytest.raises(LeapError, match="target handle has expired"):
+        expired.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", expired_handle
+        )
+
+    first, _ = make_workspace_service(tmp_path / "first")
+    second, _ = make_workspace_service(tmp_path / "second")
+    first_handle = first.inspect_selected_target()["target_handle"]
+    with pytest.raises(LeapError, match="unknown to this viewer session"):
+        second.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", first_handle
+        )
+
+    duplicate, _ = make_workspace_service(tmp_path / "duplicate")
+    duplicate_handle = duplicate.inspect_selected_target()["target_handle"]
+    duplicate.leap.duplicate_script_name = True
+    duplicate.leap.duplicate_script_item_id = True
+    with pytest.raises(LeapError, match="duplicate selected script item UUIDs"):
+        duplicate.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", duplicate_handle
+        )
+
+
+@pytest.mark.parametrize("changed_side", ["local", "remote"])
+def test_preview_workspace_push_rejects_source_change_during_preview(
+    tmp_path, monkeypatch, changed_side
+):
+    service, source = make_workspace_service(tmp_path)
+    handle, _, _ = establish_local_ahead(service, source)
+    original_status = service.workspace_status
+
+    def status_then_change(*args):
+        result = original_status(*args)
+        if changed_side == "local":
+            source.write_text(
+                'default { state_entry() { llOwnerSay("changed again"); } }\n',
+                encoding="utf-8",
+            )
+        else:
+            service.leap.script_source = (
+                'default { state_entry() { llOwnerSay("remote changed"); } }\n'
+            )
+        return result
+
+    monkeypatch.setattr(service, "workspace_status", status_then_change)
+    with pytest.raises(LeapError, match="source changed during workspace push preview"):
+        service.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", handle
+        )
+    assert not service.workspace_push_plan_dir.exists()
+    assert service.leap.script_updates == []
+
+
+def test_preview_workspace_push_cleans_expired_plans(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    handle, _, _ = establish_local_ahead(service, source)
+    first = service.preview_workspace_push(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+    first_diff = Path(first["diff_path"])
+    first_plan = first_diff.with_suffix(".json")
+    plan = json.loads(first_plan.read_text(encoding="utf-8"))
+    plan["expires_at"] = "2000-01-01T00:00:00+00:00"
+    first_plan.write_text(json.dumps(plan, sort_keys=True), encoding="utf-8")
+
+    second = service.preview_workspace_push(
+        "fixture-workspace", "fixture", "controller", handle
+    )
+
+    assert not first_plan.exists()
+    assert not first_diff.exists()
+    assert Path(second["diff_path"]).is_file()
+
+
+def test_preview_workspace_push_rejects_plan_directory_inside_git(tmp_path):
+    service, source = make_workspace_service(tmp_path)
+    handle, _, _ = establish_local_ahead(service, source)
+    repo = tmp_path / "unsafe-plan-repo"
+    (repo / ".git").mkdir(parents=True)
+    service.workspace_push_plan_dir = repo / "plans"
+
+    with pytest.raises(LeapError, match="outside a Git working tree"):
+        service.preview_workspace_push(
+            "fixture-workspace", "fixture", "controller", handle
+        )
+
+    assert not service.workspace_push_plan_dir.exists()
+    assert service.leap.script_updates == []
+
+
 def test_touch_is_limited_to_worn_allowlisted_attachment(service):
     result = service.touch_test_hud()
     assert result["sent"] is True

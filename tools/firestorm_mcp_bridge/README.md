@@ -18,6 +18,7 @@ The bridge is launched by Firestorm through `--leap`. Its standard input and out
 - `inspect_selected_target`
 - `revalidate_selected_target`
 - `workspace_status`
+- `preview_workspace_push`
 - `touch_test_hud`
 - `capture_viewer`
 - `list_test_hud_scripts`
@@ -42,6 +43,16 @@ checks mapped kind/name and exact script identity/permissions, reads both source
 internally, revalidates again, and returns only canonical hashes, byte counts and
 `unchanged`, `local_ahead`, `remote_ahead`, `conflict`, `missing`, or `blocked`.
 It never returns source and performs no viewer or workspace write.
+
+`preview_workspace_push` accepts the same keys and refuses every state except
+verified `local_ahead`. It then resolves and reads the mapping again,
+revalidates the exact self-owned target and copy/modify script permissions,
+checks that both hashes are unchanged, and writes a 30-minute JSON plan plus
+unified diff under `%LOCALAPPDATA%\FirestormMCP\workspace-push-plans` (or the
+corresponding runtime root in tests). Its response contains only metadata and
+the diff path—never source or runtime object/item UUIDs. It does not upload,
+compile, create a recovery backup, or modify the workspace. There is no
+`apply_workspace_push` tool yet.
 
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
@@ -170,8 +181,10 @@ Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. 
 - Touch is restricted to a currently worn, explicitly allowlisted attachment name.
 - Selected-object inspection is read-only; names never authorize a target, and
   only a strict self-owned, modifiable object can receive a session-bound handle.
-- Workspace comparison is read-only and limited to named launch-allowlisted
-  roots, manifest keys, a revalidated handle, and hash-only results.
+- Workspace comparison and push preview are limited to named launch-allowlisted
+  roots, manifest keys, a revalidated handle, and source-withholding results.
+  Preview writes only its expiring plan/diff outside Git; it cannot upload or
+  change the workspace, and no workspace apply tool is exposed.
 - Screenshots hide viewer UI by default.
 - The reversible script mutation is limited to exactly one
   script in the exact allowlisted worn test HUD; caller-supplied source and IDs

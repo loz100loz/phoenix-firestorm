@@ -56,7 +56,9 @@ before every operation.
 1. `workspace_status` compares local files with permitted Firestorm source and
    reports unchanged, local-ahead, remote-ahead, conflict, missing, or blocked.
 2. `preview_workspace_push` builds an outside-Git plan and diff for one script
-   or device without uploading.
+   without uploading. The implemented first slice requires verified
+   `local_ahead` state, re-reads/revalidates before writing a 30-minute plan,
+   and returns metadata plus the diff path without source.
 3. `apply_workspace_push` rechecks source hashes, creates recovery backups,
    uploads in a deterministic order, returns compiler errors by local file, and
    stops or rolls back according to the selected transaction policy.
@@ -100,7 +102,9 @@ before every operation.
    implemented and tested against a synthetic three-device/four-script
    workspace. Hash-only `workspace_status` is implemented with named launch
    allowlists, selected-target revalidation, exact script matching, permission
-   checks and source-withholding. Push wiring remains pending.
+   checks and source-withholding. Single-script `preview_workspace_push` is also
+   implemented and tested; it creates only an outside-Git plan/diff. Apply and
+   every Firestorm write remain pending separate approval.
 3. **Owned selected object:** explicit current-selection resolution for one
    rezzed disposable device, with the same permission and ambiguity gates.
 4. **Device sets:** multiple mapped scripts per device, deterministic compile

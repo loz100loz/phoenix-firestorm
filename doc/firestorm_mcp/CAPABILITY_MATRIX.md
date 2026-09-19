@@ -60,6 +60,7 @@ limited to the disposable worn attachment named exactly `MCP POC ROOT`.
 | Add the proven third touch color | `add_third_touch_color` | One fixed source transformation only |
 | Preview a bounded script edit | `preview_test_hud_script_edit` | Exact replace or append; no upload |
 | Apply a previewed edit | `apply_test_hud_script_edit` | Confirmation, stale check, backup, compile, verify, rollback |
+| Preview one mapped workspace push | `preview_workspace_push` | Verified `local_ahead` only; repeated revalidation, 30-minute outside-Git plan/diff, no source response or upload |
 | Capture visual evidence | `capture_viewer` | Viewer UI hidden by default; HUD may be shown |
 
 The custom viewer also has permission-preserving LEAP operations for task
@@ -82,6 +83,7 @@ presence is not permission for general object writes.
 | Changed-selection rejection | Implemented, automated-tested, and live-tested |
 | Expired and cross-viewer handle rejection | Implemented and automated-tested; controlled multi-viewer live proof remains future work |
 | Hash-only `workspace_status` comparison | Implemented and automated-tested; fake example names intentionally have no live target |
+| Outside-Git `preview_workspace_push` plan/diff | Implemented and automated-tested; one script, verified `local_ahead`, no upload |
 | Push a saved file into Firestorm | Not wired yet |
 | Remote Tailscale endpoint and pairing | Designed, not configured |
 
@@ -93,7 +95,6 @@ tools after selected save events:
 
 | Planned tool/control | Purpose |
 | --- | --- |
-| `preview_workspace_push` | Create a reviewable outside-Git plan/diff without uploading |
 | `apply_workspace_push` | Recheck hashes, back up, upload, compile, return diagnostics, exact-read-verify, and restore on failure |
 | `preview_workspace_pull` / `apply_workspace_pull` | Bring permitted in-world changes back without silently overwriting local work |
 | Multi-viewer identity proof | Verify cross-viewer handle rejection between two user-controlled concurrent viewer sessions |

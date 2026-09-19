@@ -107,6 +107,17 @@ UTF-8 text with line endings normalized to LF so Windows CRLF is not a false
 change. A verified in-memory baseline may be established only when local and
 remote hashes match; it is session-bound and must not be persisted or guessed.
 
+The user subsequently approved `preview_workspace_push` only. It may accept the
+same workspace/device/script keys and short-lived target handle, but must refuse
+unless `workspace_status` is exactly `local_ahead` from a verified session
+baseline. It must re-resolve the mapping, revalidate target identity and script
+permissions, re-read both sources, revalidate again, and reject any changed
+hash. The resulting 30-minute plan and unified diff must live outside Git under
+runtime state. MCP responses may return plan/diff paths, hashes, sizes, names,
+and mapping metadata, but never source or runtime object/item UUIDs. Preview
+must not upload, compile, back up, or alter Firestorm or the workspace.
+`apply_workspace_push` remains unavailable until separately approved.
+
 Use `tools/firestorm_mcp_bridge/examples/fake_lsl_game` for workspace manifest
 and save-watcher development until the user explicitly supplies a real project
 root. Never scan for or guess the user's game workspace. Fake workspace targets

@@ -75,9 +75,9 @@ def create_mcp_server(
         name="Firestorm MCP Proof of Concept",
         description=(
             "Proof-of-concept bridge for viewer discovery, read-only selected-target "
-            "identity, worn test-HUD touch, HUD-visible screenshots, and guarded "
-            "write/compile/verify transactions limited to the sole script in an exact "
-            "allowlisted worn test HUD."
+            "identity, workspace comparison and push planning, worn test-HUD touch, "
+            "HUD-visible screenshots, and guarded write/compile/verify transactions "
+            "limited to the sole script in an exact allowlisted worn test HUD."
         ),
         version=__version__,
         **kwargs,
@@ -129,6 +129,22 @@ def create_mcp_server(
         """Compare one allowlisted local LSL mapping with a revalidated selected target."""
 
         return service.workspace_status(
+            workspace_key=workspace_key,
+            device_key=device_key,
+            script_key=script_key,
+            target_handle=target_handle,
+        )
+
+    @mcp.tool(structured_output=True)
+    def preview_workspace_push(
+        workspace_key: str,
+        device_key: str,
+        script_key: str,
+        target_handle: str,
+    ) -> dict[str, Any]:
+        """Create an outside-Git local-to-world plan and diff without uploading."""
+
+        return service.preview_workspace_push(
             workspace_key=workspace_key,
             device_key=device_key,
             script_key=script_key,
