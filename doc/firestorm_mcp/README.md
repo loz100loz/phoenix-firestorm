@@ -30,9 +30,9 @@ The approved read-only target-identity foundation is also implemented and
 automated-tested. It reports per-viewer avatar/grid/region context, inspects one
 selected linkset, enforces strict self-ownership before returning an expiring
 session-bound target handle, and rejects stale or cross-viewer handles. The
-modified viewer target compiles successfully. A live selected-object proof still
-requires restarting the side-by-side custom viewer with the new binary; no
-world-object mutation has been added.
+modified viewer target compiles successfully, and the live selected-object
+proof passed on 2026-09-19 against the disposable self-owned `MCP POC ROOT`.
+No world-object mutation has been added.
 
 Later-stage features in the roadmap are ideas and design targets only. They
 must not be implemented until the user explicitly approves a new stage.
@@ -95,7 +95,7 @@ must not be implemented until the user explicitly approves a new stage.
 | Stage | Status | Scope |
 | --- | --- | --- |
 | Stage 0 | Implemented and live-tested | LEAP connection, discovery, attachment listing, exact allowlisted HUD touch, screenshot |
-| Stage 1 | Implemented and build-tested; live proof pending | Viewer/avatar context, selected-linkset inspection, strict self-owner gate, permission/script summary, expiring handle and stale/cross-viewer rejection; no world-object writes |
+| Stage 1 | Implemented, build-tested, and live-tested | Viewer/avatar context, selected-linkset inspection, strict self-owner gate, permission/script summary, expiring handle and stale/cross-viewer rejection; no world-object writes |
 | Stage 2 | Proof, three-color edit, and reusable test-HUD editor live-passed | Exact test-HUD task inventory, permitted retrieval, reversible proof, fixed color edit, and bounded preview/apply transactions; no other objects |
 | Stage 3 | Not approved or implemented | Structured runtime-message observation and expanded interaction tests |
 | Stage 4 | Not approved or implemented | Preferences, audit logs, backups, owner restrictions, cancellation, and recovery hardening |

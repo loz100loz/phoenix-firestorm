@@ -27,9 +27,28 @@ The read-only foundation is implemented:
 - public MCP results contain a target identity hash and script summary, not the
   runtime object or task-item UUIDs used internally.
 
-Automated tests and the modified viewer compile pass. Live proof is pending a
-restart of the side-by-side custom viewer. This layer performs no object or
-script mutation.
+Automated tests, the modified viewer compile, and the first live proof pass.
+This layer performs no object or script mutation.
+
+## Live proof result
+
+The read-only identity flow passed live on 2026-09-19 using the side-by-side
+custom viewer and the disposable self-owned `MCP POC ROOT` attachment:
+
+1. `viewer_context` reported the already logged-in avatar and current region
+   without handling credentials.
+2. `inspect_selected_target` resolved the single Edit selection as the root of
+   a one-link attachment, confirmed self ownership plus copy/modify permission,
+   and reported one script metadata entry without returning source.
+3. The bridge issued a short-lived target handle and
+   `revalidate_selected_target` immediately accepted the unchanged selection.
+4. After the user closed Edit or changed selection, revalidation rejected the
+   original handle as stale.
+
+No runtime object UUID, task-item UUID, bearer credential, handle value, or
+script source was recorded in the repository or proof notes. Expiry and
+cross-viewer rejection remain automated-test results; a controlled concurrent
+multi-viewer live proof can be performed later when useful.
 
 ## Human-control capability summary
 

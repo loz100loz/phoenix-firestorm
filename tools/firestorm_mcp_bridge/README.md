@@ -131,6 +131,21 @@ This adds Firestorm's `--multiple` flag and automatically gives the bridged view
 
 Use `-ViewerPath` to launch another installed channel, such as a side-by-side Firestorm beta. The running-process guard follows that executable's filename instead of assuming the release-channel process name.
 
+For this repository's Windows source build, use the compiled executable but
+keep Firestorm's working directory at the source resource tree:
+
+```powershell
+.\launch_installed_firestorm.ps1 `
+  -ViewerPath '..\..\build-vc170-64\newview\Release\firestorm-bin-next.exe' `
+  -ViewerWorkingDirectory '..\..\indra\newview' `
+  -Multiple
+```
+
+The Release executable directory is not a packaged installation and must not be
+used as `-ViewerWorkingDirectory`; doing so omits source-tree application
+settings such as `app_settings/settings_files.xml`. Build the Release
+`copy_w_viewer_manifest` target when staged runtime dependencies need refresh.
+
 The Windows launcher packs bridge settings into a base64url JSON launch token and uses forward slashes for the bridge executable path. Firestorm reparses the text supplied to `--leap`, treating backslashes as escapes, so this avoids both nested-quote damage and stripped Windows path separators while preserving attachment names and configuration paths that contain spaces.
 
 Firestorm 7.2.5 and newer also require the `--leap` value to use LLSD notation. The launcher detects the selected executable's product version and supplies a delimiter-safe LLSD URI value automatically, avoiding nested quotes while preserving the command text.

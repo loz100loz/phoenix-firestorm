@@ -139,6 +139,13 @@ authentication in addition to tailnet policy.
 - Do not automate the login form. Let the user log in normally when needed.
 - Preserve the user's stable Firestorm installation. Test another channel
   side by side with `-ViewerPath`; never replace or uninstall stable.
+- When launching this repository's Windows source build, use the compiled
+  executable from `build-vc170-64/newview/Release` but set
+  `-ViewerWorkingDirectory` to `indra/newview`. The raw executable directory
+  intentionally contains only partially copied development assets; using it as
+  the working directory causes a missing `app_settings/settings_files.xml`
+  shutdown. Run the `copy_w_viewer_manifest` Release target after dependency
+  changes, but do not mistake its copy-only output for a packaged install.
 - Preserve open viewers and unsaved state. Do not terminate a viewer unless
   the user explicitly asks or the process is verified to be only a failed
   launch/error dialog.

@@ -76,10 +76,11 @@ presence is not permission for general object writes.
 | Watch mapped files with a debounce interval | Implemented and tested |
 | Emit hash-only stable-save events | Implemented and tested |
 | Synthetic three-device/four-script workspace | Implemented and tested |
-| Per-viewer avatar/grid/region context | Implemented and tested; live proof pending |
-| Selected-linkset inspection and script summary | Implemented and tested; live proof pending |
-| Strict self-owner gate and expiring target handles | Implemented and tested; live proof pending |
-| Stale, expired and cross-viewer handle rejection | Implemented and tested; live proof pending |
+| Per-viewer avatar/grid/region context | Implemented, automated-tested, and live-tested |
+| Selected-linkset inspection and script summary | Implemented, automated-tested, and live-tested |
+| Strict self-owner gate and expiring target handles | Implemented, automated-tested, and live-tested |
+| Changed-selection rejection | Implemented, automated-tested, and live-tested |
+| Expired and cross-viewer handle rejection | Implemented and automated-tested; controlled multi-viewer live proof remains future work |
 | Push a saved file into Firestorm | Not wired yet |
 | Remote Tailscale endpoint and pairing | Designed, not configured |
 
@@ -95,7 +96,7 @@ tools after selected save events:
 | `preview_workspace_push` | Create a reviewable outside-Git plan/diff without uploading |
 | `apply_workspace_push` | Recheck hashes, back up, upload, compile, return diagnostics, exact-read-verify, and restore on failure |
 | `preview_workspace_pull` / `apply_workspace_pull` | Bring permitted in-world changes back without silently overwriting local work |
-| Live selected-object identity proof | Verify the new read-only context, selection, owner and handle flow against one disposable rezzed object |
+| Multi-viewer identity proof | Verify cross-viewer handle rejection between two user-controlled concurrent viewer sessions |
 | Device-set transactions | Update several mapped scripts in deterministic order with stop/rollback policy |
 | Runtime test helpers | Touch mapped controls, capture results, and correlate structured test messages |
 
