@@ -72,11 +72,13 @@ rollback consumes the plan, while a failed rollback retains recovery material.
 Responses never contain source or runtime object/item UUIDs, and apply never
 writes the local workspace.
 
-The first live read-only proof passed on 2026-09-19 against the disposable
-`MCP POC ROOT` using an isolated runtime workspace. It established an equal
-baseline, classified a local-only comment as `local_ahead`, created and verified
-the outside-Git diff/plan, and confirmed afterward that the remote source still
-matched the baseline. No source was returned and no viewer write occurred.
+The complete live single-script push proof passed on 2026-09-19 against the
+disposable `MCP POC ROOT` using an isolated runtime workspace. It established
+an equal baseline, classified a local-only comment as `local_ahead`, created and
+verified the outside-Git diff/plan and backup, compiled and exact-read-verified
+the change, then previewed/applied the exact original again. Both plans were
+consumed and final local/in-world hashes matched the original with status
+`unchanged`. No source or runtime object/item UUID was returned.
 
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 

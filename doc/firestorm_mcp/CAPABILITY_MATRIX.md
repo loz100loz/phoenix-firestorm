@@ -61,7 +61,7 @@ limited to the disposable worn attachment named exactly `MCP POC ROOT`.
 | Preview a bounded script edit | `preview_test_hud_script_edit` | Exact replace or append; no upload |
 | Apply a previewed edit | `apply_test_hud_script_edit` | Confirmation, stale check, backup, compile, verify, rollback |
 | Preview one mapped workspace push | `preview_workspace_push` | Verified `local_ahead` only; repeated revalidation, 30-minute outside-Git plan/diff, no source response or upload |
-| Apply one mapped workspace push | `apply_workspace_push` | Exact confirmation; stale/integrity gates, backup, compile diagnostics, exact read-back and rollback; automated-tested, live proof pending |
+| Apply one mapped workspace push | `apply_workspace_push` | Exact confirmation; stale/integrity gates, backup, compile diagnostics, exact read-back and rollback; automated- and live-tested on the disposable HUD |
 | Capture visual evidence | `capture_viewer` | Viewer UI hidden by default; HUD may be shown |
 
 The custom viewer also has permission-preserving LEAP operations for task
@@ -85,7 +85,7 @@ presence is not permission for general object writes.
 | Expired and cross-viewer handle rejection | Implemented and automated-tested; controlled multi-viewer live proof remains future work |
 | Hash-only `workspace_status` comparison | Implemented and automated-tested; fake example names intentionally have no live target |
 | Outside-Git `preview_workspace_push` plan/diff | Implemented, automated-tested, and live-tested against the disposable test HUD; one script, verified `local_ahead`, no upload |
-| Push one saved file into Firestorm | Implemented and automated-tested with backup/compile/verify/rollback; disposable-HUD live proof pending |
+| Push one saved file into Firestorm | Implemented, automated-tested, and live-tested with backup/compile/verify plus exact restoration on the disposable HUD |
 | Remote Tailscale endpoint and pairing | Designed, not configured |
 
 ## Next development controls

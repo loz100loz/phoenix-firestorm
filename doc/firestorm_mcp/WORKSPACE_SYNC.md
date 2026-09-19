@@ -108,7 +108,8 @@ before every operation.
    and automated-tested. Apply adds exact confirmation, post-backup revalidation,
    an outside-Git recovery backup, compile diagnostics, exact read-back, baseline
    advancement after success, and automatic restoration after failure. Its live
-   disposable-HUD proof remains pending; device-set writes remain a later stage.
+   disposable-HUD apply-and-exact-restore proof passed on 2026-09-19; device-set
+   writes remain a later stage.
 3. **Owned selected object:** explicit current-selection resolution for one
    rezzed disposable device, with the same permission and ambiguity gates.
 4. **Device sets:** multiple mapped scripts per device, deterministic compile
@@ -120,10 +121,11 @@ before every operation.
 Stages 3 and later require a separate live safety proof before production game
 objects are allowed.
 
-## Live read-only push-preview proof
+## Live single-script push proof
 
-On 2026-09-19, `preview_workspace_push` passed its first live proof against the
-disposable worn `MCP POC ROOT`; no production workspace or object was used.
+On 2026-09-19, the complete `preview_workspace_push` and
+`apply_workspace_push` transaction passed against the disposable worn
+`MCP POC ROOT`; no production workspace or object was used.
 
 1. An isolated workspace under `%LOCALAPPDATA%\FirestormMCP` was populated from
    an existing verified runtime backup whose canonical hash exactly matched the
@@ -137,14 +139,24 @@ disposable worn `MCP POC ROOT`; no production workspace or object was used.
 5. `preview_workspace_push` created its 30-minute JSON plan and unified diff
    outside Git. The diff hash verified and the diff contained the local-only
    marker.
-6. A final status call remained `local_ahead`; the live remote hash still
-   matched the baseline, `source_returned` was false, and `writes_performed` was
-   false.
-7. The MCP tool inventory confirmed that `apply_workspace_push` was not exposed.
+6. `apply_workspace_push` revalidated the selected strict-self-owned HUD, exact
+   script, mapping, baseline, hashes, diff and permissions; created and verified
+   an exact timestamped backup; then compiled and exact-read-verified the marker
+   source. The plan was consumed and status became `unchanged` at the new hash.
+7. Removing the marker with a line-oriented patch left one extra byte locally,
+   so the restoration orchestrator correctly refused to proceed. The verified
+   first backup restored the isolated local file to its exact original
+   canonical SHA-256, `cf0bb59ed7e5dd17bb642a5ad7874d0ebe7d6fbd7b47352f885fde7429e44248`.
+8. A fresh handle and restoration preview/apply transaction created a second
+   backup, compiled and exact-read-verified the original, consumed its plan, and
+   ended with both local and in-world hashes equal to that original and status
+   `unchanged`.
 
-This proves selection binding, baseline classification, revalidation and plan
-generation on a live permitted target. It is not an upload/compile proof and is
-not approval to expose apply or use production objects.
+This proves live selection binding, baseline classification, preview integrity,
+backup, upload, compilation, exact source read-back, baseline advancement and
+exact restoration for one allowlisted disposable script. It does not authorize
+production objects, multiple-script transactions, script creation/deletion, or
+workspace pull.
 
 ## Synthetic workspace
 
