@@ -110,15 +110,17 @@ before every operation.
    advancement after success, and automatic restoration after failure. Its live
    disposable-HUD apply-and-exact-restore proof passed on 2026-09-19; device-set
    writes remain a later stage.
-3. **Owned selected object:** explicit current-selection resolution for one
-   rezzed disposable device, with the same permission and ambiguity gates.
+3. **Owned selected object:** explicit current-selection resolution and the
+   complete single-script push/compile/read-back/restore transaction are
+   implemented and live-proven on one rezzed disposable device, with the same
+   permission and ambiguity gates.
 4. **Device sets:** multiple mapped scripts per device, deterministic compile
    ordering, per-file results, and configurable stop/rollback behavior.
 5. **Development loop:** direct AI/MCP calls are the primary path; optional
    file watching or an explicit VS Code task can invoke the same preview, push,
    compile-diagnostic, and runtime-check tools.
 
-Stages 3 and later require a separate live safety proof before production game
+Stages 4 and later require a separate live safety proof before production game
 objects are allowed.
 
 ## Live single-script push proof
@@ -157,6 +159,33 @@ backup, upload, compilation, exact source read-back, baseline advancement and
 exact restoration for one allowlisted disposable script. It does not authorize
 production objects, multiple-script transactions, script creation/deletion, or
 workspace pull.
+
+## Live rezzed-object push proof
+
+On 2026-09-19, the same existing-script transaction passed against the selected
+rezzed object named exactly `MCP rezzed object test` on the user's private land.
+
+1. Viewer readiness was `STATE_STARTED`; selection inspection identified one
+   non-attachment root, strict self-ownership, modify permission, and exactly
+   one copyable/modifiable script named `New Script`.
+2. The already allowlisted isolated workspace gained a `selected_object`
+   mapping for that exact display name. Its known standard test source matched
+   the in-world source at canonical SHA-256
+   `59cbd50aa11e672363679bb87116e10de097c6bd3cbf452a33d0bd8792cf8fbd`,
+   establishing a verified baseline without returning live source.
+3. A local-only proof comment produced `local_ahead`; preview remained
+   read-only, and apply revalidated identity, ownership, permissions, mapping,
+   script, baseline, source and diff before backup and upload.
+4. The marked source compiled and exact-read-verified, its plan was consumed,
+   and status became `unchanged` at the marked hash.
+5. Removing the local comment returned the exact original hash. A second
+   preview/apply created another backup, compiled and exact-read-verified the
+   original, consumed its plan, and ended with both hashes original and status
+   `unchanged`.
+
+This proves that the selected-object mapping can safely update an existing
+script in a disposable rezzed object. Creating a missing task script remains a
+separate future preview/apply capability with duplicate-name and cleanup rules.
 
 ## Synthetic workspace
 

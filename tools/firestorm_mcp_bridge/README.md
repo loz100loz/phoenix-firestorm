@@ -80,6 +80,14 @@ the change, then previewed/applied the exact original again. Both plans were
 consumed and final local/in-world hashes matched the original with status
 `unchanged`. No source or runtime object/item UUID was returned.
 
+The same complete transaction subsequently passed against the strictly
+self-owned selected rezzed object `MCP rezzed object test`, using a
+`selected_object` manifest mapping and one existing script. Both marked and
+restoration pushes compiled and exact-read-verified; the final local and
+in-world hashes matched the original and no plan remained. Script creation is
+not part of this tool: a future missing-script workflow requires a separately
+guarded preview/apply operation with duplicate-name refusal and cleanup policy.
+
 `touch_test_hud` cannot accept an arbitrary object UUID. It resolves an exact allowlisted name against the avatar's currently worn attachments immediately before sending Firestorm's existing `requestTouch` operation. The default allowlist contains only `MCP POC ROOT`.
 
 `capture_viewer` hides the viewer UI and shows HUDs by default. Screenshots stay in the current user's local application-data directory and are returned as MCP image content.

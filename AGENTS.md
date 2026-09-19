@@ -135,6 +135,16 @@ the recovery path. This approval is one mapped script at a time and does not
 authorize production objects, device-set transactions, script creation/deletion
 or workspace pull.
 
+The same single-existing-script workspace transaction was subsequently approved
+and live-proven against the strictly self-owned selected rezzed object named
+exactly `MCP rezzed object test`. This proves the existing selected-object path;
+it does not authorize other rezzed objects or production devices. The user also
+recorded a future requirement for MCP to create missing scripts when needed.
+That creation feature is not implemented or generally authorized yet: it must
+use a separate preview/apply contract, exact selected self-owned target,
+duplicate-name refusal, fixed or reviewed source, compile/read-back checks, and
+safe cleanup/recovery without weakening normal Second Life permissions.
+
 Use `tools/firestorm_mcp_bridge/examples/fake_lsl_game` for workspace manifest
 and save-watcher development until the user explicitly supplies a real project
 root. Never scan for or guess the user's game workspace. Fake workspace targets
